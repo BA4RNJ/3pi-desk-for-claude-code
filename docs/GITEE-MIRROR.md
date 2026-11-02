@@ -1,5 +1,8 @@
 # Gitee 源码镜像
 
+> **状态：已暂停（2026-11-03）。** Gitee 镜像暂不启用，README 不再提供入口。
+> 本文保留作为将来重新启用时的配置参考；请勿把它当作当前可用的镜像地址。
+
 GitHub 是主仓库，包含 Releases 安装包、Issues、Actions 和 Dependabot。Gitee 作为中国大陆可访问的
 **源码镜像**，同步 `main` 分支和 Git tags；安装包仍以 GitHub Releases 为准。
 

@@ -542,7 +542,8 @@ node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary
 - PDF support depends on the configured model/gateway.
 - macOS packages are unsigned/unnotarized by default; CI publishes a single runner architecture, so
   build from source if that architecture does not match the target Mac.
-- The app is ~640 MB unpacked because it bundles the Claude Code native binary.
+- The default package is ~275 MB unpacked; it resolves the Claude Code CLI at runtime. The
+  offline build (`electron-builder.offline.yml`) bundles the CLI and is ~640 MB.
 - Future work: cloud/API usage limits, proper i18n, auto-update feed, richer diff editor, more
   marketplace metadata, and an automated restore UI for backups.
 

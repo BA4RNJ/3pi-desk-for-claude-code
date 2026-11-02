@@ -1,13 +1,9 @@
 name: Mirror to Gitee
 
+# Temporarily disabled 2026-11-03: the Gitee mirror is not in use.
+# Re-enable the push/schedule triggers after configuring GITEE_SSH_PRIVATE_KEY
+# (see docs/GITEE-MIRROR.md).
 on:
-  push:
-    branches: [main]
-    tags:
-      - "v*"
-      - "wsl-v*"
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:

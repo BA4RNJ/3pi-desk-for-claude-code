@@ -5,7 +5,7 @@
 - **没有安装过 Claude Code**，只想用这个面板 + 第三方 API；
 - **已经安装过 Claude Code CLI**，想继续用现有配置和聊天记录。
 
-结论先说：**两类用户都不需要额外安装全局 `claude` 命令。** 面板自带 Claude Code CLI。
+结论先说：**两类用户都不必手动安装全局 `claude`；面板会优先复用已有安装，没有时会提示下载官方 CLI（约 146 MB）。**
 
 ---
 
@@ -16,17 +16,18 @@
         │
         ▼
 Claude Agent SDK（官方 SDK）
-        │  内置并启动
+        │  解析并启动
         ▼
-Claude Code CLI（随应用打包的 claude 二进制）
+Claude Code CLI（系统安装、已下载缓存或离线内置）
         │
         ▼
 ANTHROPIC_BASE_URL（第三方 Anthropic 兼容 API）
 ```
 
 - 会话、工具调用、权限、检查点等逻辑由 **Claude Code CLI** 执行；面板只负责界面和配置。
-- 关键实现：`src/main/session.ts` 的 `resolveClaudeExecutable()` 固定解析 SDK 自带的
-  `@anthropic-ai/claude-agent-sdk-<platform>-<arch>/claude`，**不会**调用你系统里的全局 `claude`。
+- 关键实现：`src/main/claude-cli.ts` 的 `resolveClaudeExecutable()`（`src/main/session.ts`
+  重新导出）按 `CLAUDE_CODE_EXECUTABLE` → 设置中的手动路径 → 离线下内置副本 → 已下载缓存 →
+  系统安装的顺序查找 CLI。默认安装包不再内置 CLI，只有离线构建才捆绑。
 - 面板和 CLI 共享同一个 `~/.claude/` 目录：`settings.json`、`~/.claude.json`、MCP 配置、
   skills、agents、hooks，以及 `~/.claude/projects/**` 下的聊天记录。
 
@@ -36,7 +37,7 @@ ANTHROPIC_BASE_URL（第三方 Anthropic 兼容 API）
 
 | 你的情况 | 怎么做 |
 | --- | --- |
-| 没装过 Claude Code | 直接用打包版，或从源码构建；无需 `npm i -g @anthropic-ai/claude-code` |
+| 没装过 Claude Code | 直接用打包版；首次使用在设置 → 通用下载 CLI，或手动选择已有安装 |
 | 装过 Claude Code，已在 CLI 里配好第三方 API | 直接运行；面板会读取 `~/.claude/settings.json`，聊天记录也会出现 |
 | 装过 Claude Code，但只在 `.bashrc` / `.zshrc` 里 `export` 了环境变量 | 从终端启动面板，或在面板 **设置 → API** 里重新保存一次配置（推荐） |
 | 想自己维护配置、不把密钥交给面板 | 手动编辑 `~/.claude/settings.json` 的 `env` 块，面板只读取并显示掩码 |
@@ -130,11 +131,12 @@ npm run dist:mac        # dmg + zip（默认未签名）
 
 可以放心直接使用，两者不会冲突：
 
-- **不会互相覆盖二进制**：面板使用自己打包的 CLI，不修改你的全局 `claude`。
+- **不会互相覆盖二进制**：面板优先复用你的全局 `claude`；没有时才使用下载或内置副本，且不会
+  修改全局二进制。
 - **共享配置和聊天**：面板读取 `~/.claude/settings.json`、`~/.claude.json` 和
   `~/.claude/projects/**`，你已有的会话会出现在对应工作区。
-- **版本可能不同**：面板的 CLI 版本跟随安装的 SDK；全局 `claude` 升级不会升级面板内置版本。
-  需要更新时重新构建或重新安装应用。
+- **版本可能不同**：面板使用它解析到的 CLI；在设置 → 通用里手动指定路径可以固定版本。
+  全局 `claude` 升级后面板会跟随，除非你手动指定了路径。
 - **认证信息**：面板从 `~/.claude/settings.json` 的 `env` 读取 `ANTHROPIC_AUTH_TOKEN` 或
   `ANTHROPIC_API_KEY`，只把掩码传给界面。
 
@@ -350,8 +352,8 @@ This tutorial covers two groups of users:
 - **Users who have never installed Claude Code** and only want this panel plus a third-party API.
 - **Users who already have the Claude Code CLI** and want to keep their configuration and chats.
 
-Short version: **neither group needs to install a global `claude` command.** The panel bundles
-the Claude Code CLI.
+Short version: **neither group must install a global `claude` command.** The panel reuses an
+installed CLI, or downloads the official CLI (~146 MB) on first use.
 
 ## 1. How the panel relates to Claude Code
 
@@ -360,9 +362,9 @@ the Claude Code CLI.
         │
         ▼
 Claude Agent SDK (official SDK)
-        │  bundles and starts
+        │  resolves and starts
         ▼
-Claude Code CLI (the claude binary shipped with the app)
+Claude Code CLI (system install, cached download, or offline bundle)
         │
         ▼
 ANTHROPIC_BASE_URL (third-party Anthropic-compatible API)
@@ -380,7 +382,7 @@ ANTHROPIC_BASE_URL (third-party Anthropic-compatible API)
 
 | Your situation | What to do |
 | --- | --- |
-| Never installed Claude Code | Use the packaged build or build from source; no `npm i -g @anthropic-ai/claude-code` required |
+| Never installed Claude Code | Use the packaged build; download the CLI in Settings → General, or pick an existing install |
 | Installed Claude Code and configured a third-party API in the CLI | Run the app; it reads `~/.claude/settings.json` and shows your existing chats |
 | Installed Claude Code but only exported variables in `.bashrc` / `.zshrc` | Launch from a terminal, or save the configuration once in Settings → API (recommended) |
 | Want to keep keys outside the panel | Edit the `env` block of `~/.claude/settings.json`; the panel reads it and shows only a mask |
@@ -423,7 +425,8 @@ Verification:
 - **Settings → API** shows the Base URL, model, and a masked token.
 - A simple message receives a streaming reply.
 
-> The packaged app does not need a global `claude` command or a prior Claude Code login.
+> The packaged app does not need a global `claude` command or a prior Claude Code login. If no
+> CLI is found, download it from **Settings → General → Claude Code CLI**.
 
 ## 4. Run or build from source
 
@@ -463,18 +466,19 @@ Notes:
   certificate and Apple notarization before distributing, otherwise Gatekeeper blocks the first
   launch (right-click → Open bypasses this locally).
 - If the packaged app fails with `spawn ENOTDIR`, the `asarUnpack` setting or the
-  `app.asar.unpacked` path fix in `resolveClaudeExecutable()` is broken. Keep both.
+  `app.asar.unpacked` path fix in `resolveClaudeExecutable()` (`src/main/claude-cli.ts`) is
+  broken. Keep both. This only applies to the offline build that bundles the CLI.
 
 ## 5. Already installed Claude Code CLI
 
 The two installations coexist safely:
 
-- **No binary conflict**: the panel uses its own bundled CLI and does not modify the global
-  `claude`.
+- **No binary conflict**: the panel prefers your installed `claude` and only uses a downloaded or
+  bundled copy when none is found; it never modifies the global binary.
 - **Shared configuration and chats**: the panel reads `~/.claude/settings.json`, `~/.claude.json`,
   and `~/.claude/projects/**`; existing sessions appear in the matching workspace.
-- **Versions may differ**: the panel's CLI version follows its SDK. Upgrading the global `claude`
-  does not upgrade the bundled one; rebuild or reinstall the app to update it.
+- **Versions may differ**: the panel uses whichever CLI it resolved. Pin a specific binary in
+  Settings → General if you need a fixed version.
 - **Credentials**: the panel reads `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` from the `env`
   block of `~/.claude/settings.json` and only sends a mask to the UI.
 

@@ -4,7 +4,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Linux / macOS / WSL2](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey.svg)](#系统要求)
 [![Release](https://img.shields.io/github/v/release/BA4RNJ/3pi-desk-for-claude-code)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases)
-[![Gitee mirror](https://img.shields.io/badge/Gitee-source%20mirror-c71d23)](https://gitee.com/BA4RNJ/3pi-desk-for-claude-code)
 
 ## Claude Code 图形化界面 / GUI 桌面客户端
 
@@ -21,8 +20,8 @@ MiniMax、Ollama 本地模型以及其他自定义网关。
 - **不用记忆 CLI 命令**：工作区、标签页、文件面板、斜杠命令、权限确认都在图形界面完成。
 - **不用手动改环境变量**：设置 → API 会写入 `~/.claude/settings.json`，并自动选择
   `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`。
-- **不用单独安装 Claude Code**：发布包内置官方 SDK 与 Claude Code CLI；也可以复用你现有的
-  CLI 配置和聊天记录。
+- **不用单独安装 Claude Code**：发布包内置官方 SDK，并优先复用本机已安装的 Claude Code CLI；
+  没有时会按需下载（约 146 MB），也可以手动选择现有安装。
 - **多平台**：Linux、Windows WSL2/WSLg、macOS（Apple Silicon；Intel 可从源码构建）。
 - **中文文档 / 中文界面**：README、安装教程、WSL 指南均为中文优先，界面可切换中文。
 - **对话可编辑 / 撤回**：发送后的用户消息可在输入框原地修改，或确认后撤回，不新开分支。
@@ -39,23 +38,19 @@ macOS、Claude Code 插件市场、Claude Code 多标签、Claude Code 非官方
 **3PI Desk for Claude Code** is a local **desktop GUI for Claude Code** that keeps the Claude Code
 workflow while letting you point it at any **Anthropic-Messages-compatible API provider** (DeepSeek,
 Kimi/Moonshot, GLM/Z.ai, MiniMax, Ollama, OpenCode Go, or a custom gateway). It runs on Linux,
-Windows WSL2/WSLg, and macOS. The packaged app bundles the official Claude Code CLI, so no separate
-CLI install is required. The UI is English by default with a 中文 toggle; the documentation is
-Chinese-first with a full English section below.
+Windows WSL2/WSLg, and macOS. The packaged app bundles the official SDK and reuses an installed
+Claude Code CLI (or downloads one on first use), so a separate CLI install is optional. The UI is
+English by default with a 中文 toggle; the documentation is Chinese-first with a full English
+section below.
 
 Keywords: Claude Code GUI, Claude Code desktop app, Claude Code graphical interface, Claude Code
 third-party API, Claude Code DeepSeek, Claude Code Kimi, Claude Code GLM, Claude Code Ollama,
 Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
 
-## 镜像 / Mirrors
+## 源码 / Source
 
 - **GitHub（主仓库，含 Releases 安装包）**：
   https://github.com/BA4RNJ/3pi-desk-for-claude-code
-- **Gitee（源码镜像）**：
-  https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
-
-Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从 GitHub Releases 下载。
-镜像配置和排错见 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md)。
 
 ---
 
@@ -86,8 +81,9 @@ Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从
   场景设计的。
 - **当前阶段。** 项目仍处于初始创建和测试阶段，会有不少 bug、粗糙之处和未完成的功能，会逐步
   完善。欢迎反馈问题和提交改进。
-- **底层是什么。** 会话由官方 **Claude Agent SDK** 执行，SDK 内置 Claude Code CLI。桌面端只是
-  界面和配置层，没有重新实现 Agent 循环，因此核心行为仍然是 Claude Code。
+- **底层是什么。** 会话由官方 **Claude Agent SDK** 执行；Claude Code CLI 优先复用本机安装，
+  没有时按需下载。桌面端只是界面和配置层，没有重新实现 Agent 循环，因此核心行为仍然是
+  Claude Code。
 - **关于 API Key。** 密钥只会写入本机 Claude Code 配置 `~/.claude/settings.json`（权限
   `0600`），不会发送给项目作者；渲染进程只拿到掩码。如果你不信任本客户端，可以完全不用面板
   填写密钥，直接在 Claude Code CLI 或 `~/.claude/settings.json` 中配置；面板会读取现有配置，
@@ -177,18 +173,24 @@ WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包�
 
 ## 需要单独安装 Claude Code 吗？
 
-**不需要。** 打包版和源码版都通过 Claude Agent SDK 内置了官方 Claude Code CLI：
+**通常不需要。** 默认安装包不再内置 CLI，应用按以下顺序查找：
 
-- **Linux 打包版**：CLI 位于
-  `release/linux-unpacked/resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`。
-- **macOS 打包版**：CLI 位于
-  `release/mac-arm64/3PI Desk for Claude Code.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`
-  （Intel 构建位于 `release/mac/`，平台包为 `darwin-x64`）。
-- **源码版**：`npm install` 会安装 `@anthropic-ai/claude-agent-sdk` 及当前平台包
-  （Linux `...-linux-x64`、Apple Silicon `...-darwin-arm64`、Intel `...-darwin-x64`，约 314 MB），
-  其中包含同一个二进制。
+1. `CLAUDE_CODE_EXECUTABLE` 环境变量；
+2. 设置 → 通用 → Claude Code CLI 中手动指定的路径；
+3. 应用内置的 CLI（仅离线构建 `npm run package:offline`）；
+4. 之前下载到应用数据目录的副本（Linux：`~/.config/claude-desk/claude-cli/`；macOS：
+   `~/Library/Application Support/claude-desk/claude-cli/`）；
+5. 系统安装：`PATH` 中的 `claude`、`~/.local/bin/claude`、官方安装器的
+   `~/.local/share/claude/versions/*`、Homebrew 路径等。
 
-如果你**已经安装过 Claude Code**，两者可以共存：应用不会调用全局 `claude` 命令，但会共享
+如果都没有找到，设置页和主界面会提示下载官方 CLI（约 146 MB），或手动选择已有的 `claude`。
+
+- **Linux**：默认 deb/AppImage 不包含 CLI；离线包 `npm run dist:linux:offline` 会把它放在
+  `resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`。
+- **macOS**：Electron 版同上；原生 SwiftUI 版（`v0.1.4.1`）自带 Node、SDK 和 ARM64 CLI。
+- **源码版**：`npm install` 会安装当前平台的 CLI 包（约 314 MB），开发时直接使用它。
+
+如果你**已经安装过 Claude Code**，应用会优先复用它（通过 `PATH` 或官方安装器路径），并共享
 `~/.claude/` 下的设置、MCP 配置、Skills、Agents、Hooks 和聊天记录。因此你已有的会话会出现在
 应用里，应用里改的 API 配置也会被 CLI 看到。
 
@@ -379,9 +381,10 @@ Developer ID 签名与 Apple 公证。`npm run package` / `npm run dist` 会按�
 - **Early stage.** The project is still in its initial creation and testing phase. Expect bugs,
   rough edges, and incomplete features; it will be improved incrementally. Issue reports and
   patches are welcome.
-- **What runs underneath.** Sessions are executed by the official **Claude Agent SDK**, which
-  bundles the Claude Code CLI. The desktop app is a UI and configuration layer; it does not
-  reimplement the agent loop, so the core behaviour is the same Claude Code you already trust.
+- **What runs underneath.** Sessions are executed by the official **Claude Agent SDK**; the
+  Claude Code CLI is reused from the system or downloaded on first use. The desktop app is a UI
+  and configuration layer; it does not reimplement the agent loop, so the core behaviour is the
+  same Claude Code you already trust.
 - **About API keys.** The app writes your key only to the local Claude Code configuration
   (`~/.claude/settings.json`, mode `0600`) and never sends it to the project author. The
   renderer only receives a masked token. If you would rather not hand your key to this client at
@@ -493,20 +496,25 @@ troubleshooting.
 
 ## Do I need to install Claude Code?
 
-**No.** The packaged build and the source build both bundle the official Claude Code CLI through
-the Claude Agent SDK, so a separate `claude` installation is not required:
+**Usually not.** The default package no longer bundles the CLI. The app looks for it in this
+order:
 
-- **Linux packaged app:** the CLI binary ships under
-  `release/linux-unpacked/resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`.
-- **macOS packaged app:** the CLI binary ships under
-  `release/mac-arm64/3PI Desk for Claude Code.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`
-  (Intel builds use `release/mac/` and `darwin-x64`).
-- **From source:** `npm install` pulls `@anthropic-ai/claude-agent-sdk` and the current platform
-  package (Linux `...-linux-x64`, Apple Silicon `...-darwin-arm64`, Intel `...-darwin-x64`;
-  ~314 MB), which contains the same binary.
+1. `CLAUDE_CODE_EXECUTABLE`;
+2. the path selected in **Settings → General → Claude Code CLI**;
+3. the bundled CLI (offline build only);
+4. a previously downloaded copy under the app data directory;
+5. a system installation (`PATH`, `~/.local/bin/claude`, the official installer's versions
+   directory, Homebrew paths).
 
-If you **already have Claude Code installed**, the two coexist safely. The app deliberately uses
-its own bundled CLI (it never invokes the global `claude` binary), but it shares the same
+If none is found, Settings and the main window offer a ~146 MB download or a file picker.
+
+- **Linux:** the default deb/AppImage does not include the CLI; `npm run dist:linux:offline`
+  builds a package that puts it under `resources/app.asar.unpacked/...`.
+- **macOS:** the Electron build follows the same rules; the native SwiftUI build (`v0.1.4.1`)
+  bundles Node, the SDK, and the ARM64 CLI.
+- **From source:** `npm install` pulls the current platform CLI package (~314 MB) for development.
+
+If you **already have Claude Code installed**, the app prefers it and shares the same
 `~/.claude/` directory: settings, MCP configuration, skills, agents, hooks, and chat transcripts.
 Existing chats therefore appear in the app, and API changes made in the app are visible to the
 CLI as well.
