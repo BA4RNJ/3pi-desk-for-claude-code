@@ -5,7 +5,8 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Undo2
 } from 'lucide-react'
 import { useState } from 'react'
 import type { AssistantMessage, UIMessage, UserMessage } from '../types'
@@ -45,6 +46,7 @@ function ChevronIcon() {
 interface MessageActions {
   onRewind: (messageId: string) => void
   onEdit: (messageId: string) => void
+  onWithdraw: (messageId: string) => void
   onBranch: (messageId: string) => void
   onRegenerate: (messageId: string) => void
   onOpenFile: (path: string) => void
@@ -183,8 +185,19 @@ function UserView({
               <RotateCcw size={12} /> 恢复文件
             </button>
           )}
-          <button type="button" onClick={() => actions.onEdit(message.id)} title="编辑并重发">
+          <button
+            type="button"
+            onClick={() => actions.onEdit(message.id)}
+            title="撤回并在输入框编辑"
+          >
             <Pencil size={12} /> 编辑
+          </button>
+          <button
+            type="button"
+            onClick={() => actions.onWithdraw(message.id)}
+            title="撤回这条消息"
+          >
+            <Undo2 size={12} /> 撤回
           </button>
           {message.transcriptId && (
             <button type="button" onClick={() => actions.onBranch(message.id)} title="从这里创建分支">

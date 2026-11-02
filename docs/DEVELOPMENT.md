@@ -222,6 +222,12 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   `persistChatSettings()` (serialized through `chatSettingsQueue` so rapid changes cannot lose
   updates). `selectSession` restores the saved values before `startSession`; new tabs inherit
   `lastChatSettings`. Do not add a composer setting without persisting it here.
+- **In-place edit/withdraw** (`retractMessage` in `useDesk.ts`) forks the session up to the
+  previous transcript entry, reloads the forked history to refresh transcript ids, stops the old
+  manager, swaps the tab's `sessionId`, and truncates the UI. The old session id is added to
+  `AppPreferences.hiddenSessions` and filtered from the sidebar/search; the transcript itself is
+  never deleted. Edit returns the text/attachments through `ComposerDraft`; withdraw only shows a
+  confirmation. File changes are not rolled back by this flow.
 
 ### API providers, models, and detection
 

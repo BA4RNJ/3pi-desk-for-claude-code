@@ -14,6 +14,7 @@ import type {
   FileEntry,
   SlashCommandInfo
 } from '../../../shared/types'
+import type { ComposerDraft } from '../types'
 import { failureText } from '../../../shared/attachments'
 import { fileToAttachment } from '../lib/files'
 
@@ -21,6 +22,7 @@ interface ComposerProps {
   running: boolean
   connecting: boolean
   attachments: Attachment[]
+  draft?: ComposerDraft | null
   onAttachmentsChange: (attachments: Attachment[]) => void
   attachmentError: AttachmentFailure[]
   onAttachmentErrorChange: (errors: AttachmentFailure[]) => void
@@ -40,6 +42,7 @@ export function Composer({
   running,
   connecting,
   attachments,
+  draft,
   onAttachmentsChange,
   attachmentError,
   onAttachmentErrorChange,
@@ -55,6 +58,21 @@ export function Composer({
   const [slashDismissed, setSlashDismissed] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!draft) return
+    setValue(draft.text)
+    onAttachmentsChange(draft.attachments)
+    onAttachmentErrorChange([])
+    setMention(null)
+    setSlashDismissed(false)
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(draft.text.length, draft.text.length)
+    })
+  }, [draft, onAttachmentsChange, onAttachmentErrorChange])
 
   const slashQuery =
     !slashDismissed && value.startsWith('/') && !value.includes(' ')

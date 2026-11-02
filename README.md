@@ -66,6 +66,8 @@
 - **Agent 能力**：流式回复、思考块、工具卡片（Bash、编辑、diff、读取/搜索、子代理、待办）、
   文件检查点恢复、斜杠命令、模型与思考强度切换、上下文和费用估算。
 - **对话视图**：简洁 / 详细模式一键切换；用户 / 全部切换按钮支持一键跳转到完整对话。
+- **编辑与撤回**：用户消息可以原地编辑或撤回。编辑不弹窗，原消息会回到输入框；撤回需要确认。
+  两者都只回退当前对话，不新开标签或分支；旧记录保留在本机但从会话列表隐藏。
 - **附件**：图片、PDF、文本/代码/配置/CSV/SVG 等；失败的附件会显示具体原因。
 - **扩展**：管理 MCP、插件市场、Hooks、Skills 和 Agents。
 - **文件**：工作区文件树、文本编辑和图片预览；工具里的文件路径可直接打开。
@@ -333,6 +335,9 @@ Settings → API:
   reads/searches, subagents, todos), file checkpoint restore, slash commands, model and effort
   selection, and context/cost estimates.
 - **Chat views**: one-click compact/detailed mode; a User/All toggle with jump-to-message.
+- **Edit and withdraw**: edit a sent user message in place (it returns to the composer without a
+  dialog), or withdraw it with confirmation. Both roll back the current tab without opening a new
+  tab/branch; the old transcript is kept but hidden.
 - **Attachments**: images, PDF, text/code/config/CSV/SVG, and more; rejected files explain why.
 - **Extensions**: manage MCP servers, install/update/remove plugins from the official marketplace,
   manage hooks, and create or edit skills and agents.

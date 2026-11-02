@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import type { Attachment, AttachmentFailure, SessionInfo } from '../../shared/types'
-import type { TodoItem, UserMessage } from './types'
+import type { ComposerDraft, TodoItem } from './types'
 import { basename } from './lib/format'
 import { fileToAttachment } from './lib/files'
 import { setI18nLanguage, startI18n } from './i18n'
@@ -10,7 +10,6 @@ import { ChatView } from './components/ChatView'
 import { Composer } from './components/Composer'
 import { ComposerControls, type ChatViewMode } from './components/ComposerControls'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { EditMessageDialog } from './components/EditMessageDialog'
 import { FilePanel } from './components/FilePanel'
 import { FilePreviewDialog } from './components/FilePreviewDialog'
 import { PermissionBar } from './components/PermissionBar'
@@ -29,6 +28,7 @@ export default function App() {
   const desk = useDesk()
   const activeTab = desk.activeTab
   const [composerAttachments, setComposerAttachments] = useState<Attachment[]>([])
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
   const [attachmentError, setAttachmentError] = useState<AttachmentFailure[]>([])
   const [viewMode, setViewMode] = useState<ChatViewMode>(() =>
     localStorage.getItem('3pi-chat-view') === 'compact' ? 'compact' : 'detail'
@@ -40,7 +40,7 @@ export default function App() {
   const [rewindTarget, setRewindTarget] = useState<string | null>(null)
   const [tagTarget, setTagTarget] = useState<SessionInfo | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<SessionInfo | null>(null)
-  const [editTarget, setEditTarget] = useState<UserMessage | null>(null)
+  const [withdrawTarget, setWithdrawTarget] = useState<string | null>(null)
   const [filePanelOpen, setFilePanelOpen] = useState(false)
   const [previewFile, setPreviewFile] = useState<string | null>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
@@ -59,6 +59,7 @@ export default function App() {
 
   useEffect(() => {
     setComposerAttachments([])
+    setComposerDraft(null)
   }, [desk.activeTabId])
 
   useEffect(() => {
@@ -165,6 +166,7 @@ export default function App() {
         connecting={activeTab.state.connecting}
         theme={desk.theme}
         pinnedSessions={desk.settings?.preferences.pinnedSessions || []}
+        hiddenSessions={desk.settings?.preferences.hiddenSessions || []}
         onNew={() => desk.newChat()}
         onSelect={(session) => void desk.selectSession(session.sessionId, session.cwd)}
         onChooseFolder={() => setWorkspaceOpen(true)}
@@ -227,11 +229,11 @@ export default function App() {
           onFilesDropped={(files) => void handleFilesDropped(files)}
           onRewind={(messageId) => setRewindTarget(messageId)}
           onEdit={(messageId) => {
-            const message = activeTab.messages.find(
-              (item) => item.id === messageId && item.role === 'user'
-            )
-            if (message?.role === 'user') setEditTarget(message)
+            void desk.beginEditMessage(messageId).then((draft) => {
+              if (draft) setComposerDraft({ ...draft, token: Date.now() })
+            })
           }}
+          onWithdraw={(messageId) => setWithdrawTarget(messageId)}
           onBranch={(messageId) => void desk.forkAtMessage(messageId)}
           onRegenerate={(messageId) => void desk.regenerate(messageId)}
           onOpenFile={(path) => setPreviewFile(path)}
@@ -289,6 +291,7 @@ export default function App() {
             running={activeTab.state.running}
             connecting={activeTab.state.connecting || activeTab.loadingHistory}
             attachments={composerAttachments}
+            draft={composerDraft}
             onAttachmentsChange={setComposerAttachments}
             attachmentError={attachmentError}
             onAttachmentErrorChange={setAttachmentError}
@@ -401,11 +404,14 @@ export default function App() {
         />
       )}
 
-      {editTarget && (
-        <EditMessageDialog
-          message={editTarget}
-          onSave={(text) => void desk.editAndResend(editTarget.id, text)}
-          onClose={() => setEditTarget(null)}
+      {withdrawTarget && (
+        <ConfirmDialog
+          title="撤回消息"
+          message="撤回后，这条消息及其后的回复会从当前对话中移除。仅回退对话，不会自动撤销文件修改。旧对话记录仍保留在本机，但不再显示在会话列表中。"
+          confirmLabel="撤回"
+          danger
+          onConfirm={() => void desk.withdrawMessage(withdrawTarget)}
+          onClose={() => setWithdrawTarget(null)}
         />
       )}
 

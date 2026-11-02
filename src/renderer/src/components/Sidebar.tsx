@@ -29,6 +29,7 @@ interface SidebarProps {
   connecting: boolean
   theme: ThemeMode
   pinnedSessions: string[]
+  hiddenSessions: string[]
   onNew: () => void
   onSelect: (session: SessionInfo) => void
   onChooseFolder: () => void
@@ -68,6 +69,7 @@ export function Sidebar({
   connecting,
   theme,
   pinnedSessions,
+  hiddenSessions,
   onNew,
   onSelect,
   onChooseFolder,
@@ -97,18 +99,21 @@ export function Sidebar({
         .listAllSessions(200)
         .then((list) => {
           const lower = term.toLowerCase()
+          const hidden = new Set(hiddenSessions)
           setSearchResults(
-            list.filter((session) =>
-              [session.summary, session.customTitle, session.firstPrompt, session.cwd, session.tag]
-                .filter(Boolean)
-                .some((value) => String(value).toLowerCase().includes(lower))
+            list.filter(
+              (session) =>
+                !hidden.has(session.sessionId) &&
+                [session.summary, session.customTitle, session.firstPrompt, session.cwd, session.tag]
+                  .filter(Boolean)
+                  .some((value) => String(value).toLowerCase().includes(lower))
             )
           )
         })
         .catch(() => setSearchResults([]))
     }, 220)
     return () => window.clearTimeout(timer)
-  }, [query])
+  }, [hiddenSessions, query])
 
   useEffect(() => {
     if (!menuFor) return

@@ -35,7 +35,8 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   compactMode: false,
   recentWorkspaces: [],
   chatSettings: {},
-  lastChatSettings: {}
+  lastChatSettings: {},
+  hiddenSessions: []
 }
 
 interface ClaudeSettings {

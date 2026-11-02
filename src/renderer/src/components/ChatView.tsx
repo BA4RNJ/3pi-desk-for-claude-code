@@ -28,6 +28,7 @@ interface ChatViewProps {
   onFilesDropped: (files: File[]) => void
   onRewind: (messageId: string) => void
   onEdit: (messageId: string) => void
+  onWithdraw: (messageId: string) => void
   onBranch: (messageId: string) => void
   onRegenerate: (messageId: string) => void
   onOpenFile: (path: string) => void
@@ -87,6 +88,7 @@ export function ChatView({
   onFilesDropped,
   onRewind,
   onEdit,
+  onWithdraw,
   onBranch,
   onRegenerate,
   onOpenFile
@@ -256,7 +258,7 @@ export function ChatView({
                 key={message.id}
                 message={message}
                 compact={viewMode === 'compact'}
-                actions={{ onRewind, onEdit, onBranch, onRegenerate, onOpenFile }}
+                actions={{ onRewind, onEdit, onWithdraw, onBranch, onRegenerate, onOpenFile }}
               />
             ))
           )}

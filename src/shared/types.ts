@@ -243,6 +243,8 @@ export interface AppPreferences {
   chatSettings: Record<string, ChatSettingsSnapshot>
   /** Last used settings, inherited by new chats. */
   lastChatSettings: ChatSettingsSnapshot
+  /** Session ids hidden after an in-place retract (the transcript is kept). */
+  hiddenSessions: string[]
 }
 
 export interface ApiProfile {
@@ -290,6 +292,7 @@ export interface PreferencesPatch {
   recentWorkspaces?: string[]
   chatSettings?: Record<string, ChatSettingsSnapshot>
   lastChatSettings?: ChatSettingsSnapshot
+  hiddenSessions?: string[]
 }
 
 export interface ExtensionTextFile {

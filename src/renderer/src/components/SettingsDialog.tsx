@@ -138,7 +138,8 @@ export function SettingsDialog({
       compactMode: false,
       recentWorkspaces: [],
       chatSettings: {},
-      lastChatSettings: {}
+      lastChatSettings: {},
+      hiddenSessions: []
     }
   )
   const [providerId, setProviderId] = useState(

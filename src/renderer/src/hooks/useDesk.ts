@@ -314,7 +314,10 @@ export function useDesk() {
       const target = directory || active?.cwd || cwdRef.current
       if (!target) return
       try {
-        const list = await window.desk.listSessions(target)
+        const hidden = new Set(settingsRef.current?.preferences.hiddenSessions || [])
+        const list = (await window.desk.listSessions(target)).filter(
+          (session) => !hidden.has(session.sessionId)
+        )
         sessionsRef.current = list
         setSessions(list)
         for (const tab of tabsRef.current.values()) {
@@ -1098,6 +1101,98 @@ export function useDesk() {
     []
   )
 
+  const retractMessage = useCallback(
+    async (messageId: string): Promise<{ text: string; attachments: Attachment[] } | null> => {
+      const tab = tabsRef.current.get(activeTabIdRef.current)
+      if (!tab) return null
+      const index = tab.messages.findIndex(
+        (item) => item.id === messageId && item.role === 'user'
+      )
+      if (index < 0) return null
+      const message = tab.messages[index]
+      if (message.role !== 'user') return null
+
+      const previous = previousTranscript(tab, messageId)
+      const oldSessionId = tab.sessionId
+      let forkedId: string | undefined
+      try {
+        if (oldSessionId && previous) {
+          forkedId = await window.desk.forkSession(oldSessionId, tab.cwd, previous)
+        }
+      } catch (error) {
+        pushNotice(tab, `回退会话失败：${errorText(error)}`, 'error')
+        return null
+      }
+
+      // Replace the current tab's session in place: no new tab, no visible
+      // branch. The old transcript is preserved on disk and hidden from the
+      // session lists.
+      await window.desk.stopSession(tab.id).catch(() => undefined)
+      let remaining = tab.messages.slice(0, index)
+      if (forkedId) {
+        try {
+          // A fork copies transcript entries with new ids. Reload it so later
+          // retracts can fork using ids that exist in the current session.
+          const raw = await window.desk.getSessionMessages(forkedId, tab.cwd)
+          if (raw.length > 0) remaining = historyToMessages(raw)
+        } catch {
+          // Keep the local slice if history cannot be loaded.
+        }
+      }
+      tab.messages = remaining
+      tab.tasks = []
+      tab.streamIds.clear()
+      tab.permissions = []
+      tab.sessionId = forkedId
+      tab.started = false
+      tab.state = {
+        ...tab.state,
+        running: false,
+        connecting: false,
+        error: undefined,
+        sessionId: forkedId
+      }
+      publish(tab)
+
+      if (oldSessionId) {
+        const current = settingsRef.current
+        if (current) {
+          const hidden = current.preferences.hiddenSessions || []
+          if (!hidden.includes(oldSessionId)) {
+            try {
+              const preferences = await window.desk.savePreferences({
+                hiddenSessions: [...hidden, oldSessionId]
+              })
+              const updated = { ...current, preferences }
+              settingsRef.current = updated
+              setSettings(updated)
+            } catch {
+              // Keeping the old transcript is best effort; it may remain listed.
+            }
+          }
+        }
+      }
+
+      void refreshSessions(tab.cwd)
+      return { text: message.text, attachments: message.attachments || [] }
+    },
+    [previousTranscript, publish, pushNotice, refreshSessions]
+  )
+
+  const beginEditMessage = useCallback(
+    async (messageId: string) => retractMessage(messageId),
+    [retractMessage]
+  )
+
+  const withdrawMessage = useCallback(
+    async (messageId: string) => {
+      const tab = tabsRef.current.get(activeTabIdRef.current)
+      const result = await retractMessage(messageId)
+      if (result && tab) pushNotice(tab, '消息已撤回', 'info')
+    },
+    [pushNotice, retractMessage]
+  )
+
   const forkFrom = useCallback(
     async (tab: TabRuntimeData, beforeMessageId: string): Promise<void> => {
       const previous = previousTranscript(tab, beforeMessageId)
@@ -1109,22 +1204,6 @@ export function useDesk() {
       }
     },
     [newChat, previousTranscript, selectSession]
-  )
-
-  const editAndResend = useCallback(
-    async (messageId: string, text: string) => {
-      const tab = tabsRef.current.get(activeTabIdRef.current)
-      if (!tab) return
-      const message = tab.messages.find((item) => item.id === messageId)
-      if (!message || message.role !== 'user') return
-      try {
-        await forkFrom(tab, message.id)
-        await sendMessage(text, message.attachments || [])
-      } catch (error) {
-        pushNotice(tab, `编辑重发失败：${errorText(error)}`, 'error')
-      }
-    },
-    [forkFrom, pushNotice, sendMessage]
   )
 
   const regenerate = useCallback(
@@ -1275,7 +1354,8 @@ export function useDesk() {
               compactMode: false,
               recentWorkspaces: [],
               chatSettings: {},
-              lastChatSettings: {}
+              lastChatSettings: {},
+              hiddenSessions: []
             },
             permissionRules: { allow: [], ask: [], deny: [] },
             profiles: [],
@@ -1531,7 +1611,8 @@ export function useDesk() {
     exportTab,
     exportSessionById,
     forkAtMessage,
-    editAndResend,
+    beginEditMessage,
+    withdrawMessage,
     regenerate,
     respondPermission,
     setModel,

@@ -14,6 +14,9 @@ Initial public release.
 - Electron desktop GUI for Claude Code powered by the official Claude Agent SDK.
 - Workspaces, concurrent chat tabs, and per-workspace session lists.
 - Inline permission, question, and plan cards above the composer (no full-screen prompts).
+- In-place message editing and withdrawal for user messages: edit retracts the message into the
+  composer without a dialog; withdraw asks for confirmation. Both roll the current tab back
+  without opening a new tab/branch, and the old transcript is kept but hidden.
 - Streaming replies, thinking blocks, tool cards, subagents, todos, checkpoints, and slash
   commands.
 - Compact/detailed chat views, and a single User/All toggle with jump-to-message.

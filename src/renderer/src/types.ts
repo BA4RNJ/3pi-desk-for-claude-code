@@ -85,6 +85,13 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+export interface ComposerDraft {
+  text: string
+  attachments: Attachment[]
+  /** Changes when a new draft should be loaded into the composer. */
+  token: number
+}
+
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
