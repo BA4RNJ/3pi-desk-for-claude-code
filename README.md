@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Linux / macOS / WSL2](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey.svg)](#系统要求)
 [![Release](https://img.shields.io/github/v/release/BA4RNJ/3pi-desk-for-claude-code)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases)
+[![Gitee mirror](https://img.shields.io/badge/Gitee-source%20mirror-c71d23)](https://gitee.com/BA4RNJ/3pi-desk-for-claude-code)
 
 ## Claude Code 图形化界面 / GUI 桌面客户端
 
@@ -52,7 +53,6 @@ Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
   https://github.com/BA4RNJ/3pi-desk-for-claude-code
 - **Gitee（源码镜像）**：
   https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
-  （按 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md) 导入后生效）
 
 Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从 GitHub Releases 下载。
 镜像配置和排错见 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md)。

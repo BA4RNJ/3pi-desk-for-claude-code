@@ -3,6 +3,8 @@
 GitHub 是主仓库，包含 Releases 安装包、Issues、Actions 和 Dependabot。Gitee 作为中国大陆可访问的
 **源码镜像**，同步 `main` 分支和 Git tags；安装包仍以 GitHub Releases 为准。
 
+当前镜像：https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
+
 ## 最简单：网页导入（推荐，不需要命令行）
 
 1. 登录 [Gitee](https://gitee.com/)。
