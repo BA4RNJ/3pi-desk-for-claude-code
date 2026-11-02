@@ -4,12 +4,23 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach assets to (e.g. v0.4.2)"
+        required: true
+        type: string
+      build_macos:
+        description: "Build macOS dmg/zip (leave off until the macOS work is ready)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -17,11 +28,14 @@ jobs:
     name: Build Linux packages
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -43,8 +57,8 @@ jobs:
       - name: Verify tag matches package version
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version v${VERSION}."
+          if [ "v${VERSION}" != "${RELEASE_TAG}" ]; then
+            echo "::error::Tag ${RELEASE_TAG} does not match package.json version v${VERSION}."
             exit 1
           fi
 
@@ -69,30 +83,44 @@ jobs:
           cat SHA256SUMS
           ls -lh *.AppImage *.deb
 
-      - name: Create draft release
+      - name: Create or update draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            release/*.AppImage \
-            release/*.deb \
-            release/SHA256SUMS \
-            LICENSE \
-            THIRD_PARTY_NOTICES.md \
-            --draft \
-            --generate-notes \
-            --title "3PI Desk for Claude Code ${GITHUB_REF_NAME}"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" \
+              release/*.AppImage \
+              release/*.deb \
+              release/SHA256SUMS \
+              LICENSE \
+              THIRD_PARTY_NOTICES.md \
+              --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              release/*.AppImage \
+              release/*.deb \
+              release/SHA256SUMS \
+              LICENSE \
+              THIRD_PARTY_NOTICES.md \
+              --draft \
+              --generate-notes \
+              --title "3PI Desk for Claude Code ${RELEASE_TAG}"
+          fi
 
   macos:
     name: Build macOS packages
     needs: linux
+    if: ${{ inputs.build_macos || vars.BUILD_MACOS == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -135,7 +163,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" \
+          gh release upload "${RELEASE_TAG}" \
             release/*.dmg \
             release/*.zip \
             release/SHA256SUMS-macos \
@@ -146,11 +174,14 @@ jobs:
     needs: linux
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -192,7 +223,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" \
+          gh release upload "${RELEASE_TAG}" \
             release-wsl/*.AppImage \
             release-wsl/*.deb \
             release-wsl/SHA256SUMS-wsl \

@@ -71,6 +71,16 @@ generates `SHA256SUMS`, `SHA256SUMS-macos`, and `SHA256SUMS-wsl`, and creates a 
 Release. macOS artifacts are unsigned and unnotarized unless Apple signing secrets are added to
 the repository; their filename includes the runner architecture.
 
+macOS building is **opt-in** while the macOS work is in progress. Normal `v*` tag pushes skip the
+macOS job. To build it for a specific tag, run the workflow manually with `build_macos` enabled:
+
+```bash
+gh workflow run release.yml -f tag=v0.4.2 -f build_macos=true
+```
+
+Alternatively set the repository variable `BUILD_MACOS=true` to re-enable macOS builds for tag
+pushes. The manual dispatch also works for Linux/WSL-only rebuilds (`-f build_macos=false`).
+
 ```bash
 git tag -a v0.4.2 -m "3PI Desk for Claude Code v0.4.2"
 git push origin v0.4.2
