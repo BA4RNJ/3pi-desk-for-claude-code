@@ -3,7 +3,36 @@
 GitHub 是主仓库，包含 Releases 安装包、Issues、Actions 和 Dependabot。Gitee 作为中国大陆可访问的
 **源码镜像**，同步 `main` 分支和 Git tags；安装包仍以 GitHub Releases 为准。
 
-## 一次性配置
+## 最简单：网页导入（推荐，不需要命令行）
+
+1. 登录 [Gitee](https://gitee.com/)。
+2. 打开 **https://gitee.com/projects/import**。  
+   如果这个地址打不开，点右上角 **＋ → 新建仓库 → 导入 GitHub 仓库**。
+3. 源仓库地址填：
+
+   ```text
+   https://github.com/BA4RNJ/3pi-desk-for-claude-code
+   ```
+
+4. 仓库名 / 路径填 `3pi-desk-for-claude-code`，所有者选你自己。
+5. 可见性选 **公开**，不要勾选“使用 README 初始化”。
+6. 点击 **导入**，等待 Gitee 拉取完成。
+7. 导入后如果需要更新，在 Gitee 仓库页找 **强制同步** / **同步** 按钮；如果仓库菜单里有
+   **管理 → 仓库镜像管理 → 添加镜像**，选择 **拉取（Pull）**，源地址填上面的 GitHub 地址，
+   开启自动同步即可。
+
+完成后 Gitee 地址应为：
+
+```text
+https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
+```
+
+> 如果你的 Gitee 用户名不是 `BA4RNJ`，把地址里的用户名换掉，并告诉维护者更新 README。
+
+如果只做网页导入，可以忽略下面的 SSH / GitHub Actions 步骤；已配置的自动镜像工作流在未设置
+secret 时会自动跳过，不会报错。
+
+## 可选：GitHub Actions 自动同步（需要 SSH key）
 
 ### 1. 在 Gitee 创建空仓库
 

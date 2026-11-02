@@ -52,6 +52,7 @@ Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
   https://github.com/BA4RNJ/3pi-desk-for-claude-code
 - **Gitee（源码镜像）**：
   https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
+  （按 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md) 导入后生效）
 
 Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从 GitHub Releases 下载。
 镜像配置和排错见 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md)。
