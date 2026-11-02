@@ -431,6 +431,20 @@ the source UI is Chinese and the product must default to English.
   full-screen Settings backdrop and the topbar previously used `blur()`, which made the Settings
   dialog feel very laggy; both were removed. Use a translucent solid background instead.
 
+### WSL2 / WSLg edition
+
+- Source is shared; only packaging identity differs. Build with `npm run package:wsl` or
+  `npm run dist:wsl`; output goes to `release-wsl/`.
+- `electron-builder.wsl.yml` extends the base config and overrides `productName`, `appId`,
+  `linux.executableName`, `linux.artifactName`, `extraMetadata.desktopName`, and the deb
+  `packageName` / `recommends`.
+- `src/shared/environment.ts` contains the pure WSL detector used by `src/main/index.ts`. Keep
+  runtime branches gated so native Linux behavior is unchanged.
+- `docs/WSL.md` is the user-facing guide. `release-wsl.yml` publishes `wsl-v*` tags.
+- Do not change package.json `name`; both editions intentionally share
+  `~/.config/claude-desk` and `~/.claude`. The distinct `desktopName` and `deb.packageName` keep
+  the executables, desktop entries, and dpkg packages separate.
+
 ## 15. Build, run, and test
 
 ```bash

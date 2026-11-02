@@ -149,6 +149,8 @@ export interface AppDefaults {
   cwd: string
   home: string
   platform: string
+  /** True when the process runs inside WSL (with or without WSLg). */
+  wsl: boolean
 }
 
 export type DesktopEvent = Record<string, any>

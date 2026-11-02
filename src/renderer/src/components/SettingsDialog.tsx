@@ -590,10 +590,15 @@ export function SettingsDialog({
                 <label className="toggle-row">
                   <div>
                     <strong>关闭窗口时最小化到托盘</strong>
-                    <small>关闭窗口后应用继续在托盘运行。</small>
+                    <small>
+                      {defaults?.wsl
+                        ? 'WSL 不提供系统托盘；在 WSL 中关闭窗口会直接退出。'
+                        : '关闭窗口后应用继续在托盘运行。'}
+                    </small>
                   </div>
                   <input
                     type="checkbox"
+                    disabled={defaults?.wsl}
                     checked={preferences.closeToTray}
                     onChange={(event) =>
                       setPreferences((value) => ({
@@ -606,10 +611,15 @@ export function SettingsDialog({
                 <label className="toggle-row">
                   <div>
                     <strong>全局快捷键</strong>
-                    <small>Ctrl/Cmd + Shift + Space 显示窗口（Wayland 下可能不可用）。</small>
+                    <small>
+                      {defaults?.wsl
+                        ? 'WSL 不支持跨 Windows 的全局快捷键。'
+                        : 'Ctrl/Cmd + Shift + Space 显示窗口（Wayland 下可能不可用）。'}
+                    </small>
                   </div>
                   <input
                     type="checkbox"
+                    disabled={defaults?.wsl}
                     checked={preferences.globalShortcut}
                     onChange={(event) =>
                       setPreferences((value) => ({

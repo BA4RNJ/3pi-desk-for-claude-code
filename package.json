@@ -26,8 +26,12 @@
     "start": "electron-vite preview",
     "prepackage": "node node_modules/electron/install.js",
     "package": "npm run build && electron-builder --linux dir",
+    "prepackage:wsl": "node node_modules/electron/install.js",
+    "package:wsl": "npm run build && electron-builder --linux dir --config electron-builder.wsl.yml",
     "predist": "node node_modules/electron/install.js",
-    "dist": "npm run build && electron-builder --linux AppImage deb"
+    "dist": "npm run build && electron-builder --linux AppImage deb",
+    "predist:wsl": "node node_modules/electron/install.js",
+    "dist:wsl": "npm run build && electron-builder --linux AppImage deb --config electron-builder.wsl.yml"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.316",
