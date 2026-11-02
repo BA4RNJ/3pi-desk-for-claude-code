@@ -1,0 +1,76 @@
+# Offline / fully self-contained build.
+#
+# Identical to electron-builder.yml except that the Claude Code platform CLI is
+# bundled into app.asar.unpacked. Use this for air-gapped machines; the default
+# build resolves the CLI from the user's installation or downloads it on first
+# run.
+#
+# The file list is duplicated on purpose: electron-builder merges inherited
+# `files` patterns but cannot reliably re-include a path that the parent config
+# excluded.
+appId: local.3pidesk
+productName: 3PI Desk for Claude Code
+copyright: Copyright © 2026 BA4RNJ
+electronDist: node_modules/electron/dist
+compression: maximum
+electronLanguages:
+  - en-US
+  - zh-CN
+directories:
+  output: release
+  buildResources: build
+files:
+  - "!src/**"
+  - "!docs/**"
+  - "!README.md"
+  - "!AGENTS.md"
+  - "!scripts/**"
+  - "!electron.vite.config.ts"
+  - "!tsconfig*.json"
+  - "!build/**"
+  - "!release/**"
+  - "!release-wsl/**"
+  - "!promo/**"
+  - "!.git/**"
+  - "!*.log"
+asarUnpack:
+  - node_modules/@anthropic-ai/**
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+npmRebuild: false
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: build/icon.png
+  executableName: 3pi-desk
+  syncDesktopName: true
+  artifactName: 3pi-desk-${version}-linux-${arch}.${ext}
+  maintainer: BA4RNJ <BA4RNJ@users.noreply.github.com>
+  vendor: BA4RNJ
+  synopsis: 3PI Desk for Claude Code
+  description: 3PI Desk for Claude Code - a local GUI for Claude Code powered by the Claude Agent SDK.
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  artifactName: 3pi-desk-${version}-macos-${arch}.${ext}
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  darkModeSupport: true
+  extendInfo:
+    CFBundleDisplayName: 3PI Desk for Claude Code
+    NSHumanReadableCopyright: Copyright © 2026 BA4RNJ

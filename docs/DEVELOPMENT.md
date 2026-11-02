@@ -20,11 +20,14 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
   `claude-desk` so that existing app preferences (`~/.config/claude-desk/`) and user data are
   preserved.
 
-## 2. Stack and versions (v0.4.0)
+## 2. Stack and versions (v0.4.2)
 
 - Electron 45.2.1 (Node 24.22.x inside Electron).
 - React 19, TypeScript, Vite 8, electron-vite 6.
-- `@anthropic-ai/claude-agent-sdk` 0.3.316 (bundles Claude Code 2.1.316).
+- `@anthropic-ai/claude-agent-sdk` 0.3.316 (ships Claude Code 2.1.x through an optional platform
+  package).
+- The default package is **slim**: the platform CLI package is excluded and the CLI is resolved at
+  runtime. `electron-builder.offline.yml` bundles it for air-gapped machines.
 - `electron-builder` 26 with the locally installed Electron distribution.
 - Native binary package: `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` (`linux-x64`,
   `darwin-arm64`, or `darwin-x64`).
@@ -48,6 +51,8 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
     main/
       index.ts                  app lifecycle, windows, tray, IPC registration
       session.ts                one Claude Agent SDK session manager per tab
+      claude-cli.ts             CLI discovery, download, and status
+      claude-cli-paths.ts       pure path/version helpers for the CLI resolver
       settings.ts               ~/.claude/settings.json + app preferences
       models.ts                 OpenCode Go model catalog + API test
       files.ts                  file tree/read/write, attachments, screenshots
@@ -176,17 +181,24 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   - `canUseTool` -> permission/question/plan flow
   - `additionalDirectories`, `allowedTools`, `disallowedTools`, `maxBudgetUsd`
   - `extraArgs` for IDE/Chrome flags
-  - `env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.0' }`, plus
+  - `env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: \`3pi-desk/${app.getVersion()}\` }`, plus
     `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from `findModelContextWindow()` in `main/models.ts`.
     Claude Code defaults to 200k for model IDs it does not recognize; the gateway catalog's
     per-model `limit.context` must be passed so DeepSeek (1M) and other gateway models use their
     real window. Do not hardcode a single window. Switching to a model with a different window
     restarts the session with `resume`; same-window switches use `query.setModel()` live.
-- **Packaged binary path**: the SDK resolves its native CLI inside `app.asar`, which cannot be
-  spawned (`spawn ENOTDIR`). `resolveClaudeExecutable()` replaces `app.asar` with
-  `app.asar.unpacked` and is passed as `pathToClaudeCodeExecutable`. Never remove this or the
-  packaged app will fail to start sessions. `electron-builder.yml` must keep
+- **Packaged binary path**: when the CLI is bundled (offline build), the SDK resolves it inside
+  `app.asar`, which cannot be spawned (`spawn ENOTDIR`). `resolveClaudeExecutable()` in
+  `main/claude-cli.ts` replaces `app.asar` with `app.asar.unpacked` and is passed as
+  `pathToClaudeCodeExecutable`. Never remove this or the offline packaged app will fail to start
+  sessions. `electron-builder.yml` and `electron-builder.offline.yml` must keep
   `asarUnpack: node_modules/@anthropic-ai/**`.
+- **CLI resolution order** (`main/claude-cli.ts`): `CLAUDE_CODE_EXECUTABLE` → explicit path in
+  Settings → bundled platform package → downloaded cache under `<userData>/claude-cli/<sdk-version>`
+  → system installs (`PATH`, `~/.local/bin/claude`, `~/.claude/local/claude`, the official
+  installer's `~/.local/share/claude/versions/*`, Homebrew paths). Settings → General exposes the
+  resolved path and version, a ~146 MB download, a file picker, and re-detection. The renderer also
+  shows an inline banner when no CLI is found.
 - `SessionManager` state is pushed via `session:state`; raw SDK messages via `session:event`.
   The renderer reducer (`lib/messages.ts`) handles partials, full assistant frames, tool results,
   tasks, result stats, local command output, and rewind IDs.
@@ -416,8 +428,18 @@ the source UI is Chinese and the product must default to English.
   it would reset the user's workspaces/preferences. Change `productName`/UI brand instead.
 - `electron-builder.yml`: `productName: 3PI Desk for Claude Code`, `executableName: 3pi-desk`,
   `appId: local.3pidesk`, `electronDist: node_modules/electron/dist` (avoid network downloads),
-  `asarUnpack: node_modules/@anthropic-ai/**`. Linux targets AppImage/deb; macOS targets dmg/zip
-  with `hardenedRuntime` and `build/entitlements.mac.plist`.
+  `asarUnpack: node_modules/@anthropic-ai/**`, `compression: maximum`, and only the `en-US` /
+  `zh-CN` Chromium locales. It also excludes the platform CLI package
+  (`!node_modules/@anthropic-ai/claude-agent-sdk-*/**`) — this is the default slim build.
+  Linux targets AppImage/deb; macOS targets dmg/zip with `hardenedRuntime` and
+  `build/entitlements.mac.plist`.
+- `electron-builder.offline.yml` is a full copy of that config without the CLI exclusion. Use it
+  for air-gapped builds (`npm run package:offline`, `dist:linux:offline`, `dist:mac:offline`).
+  The file list is duplicated intentionally; electron-builder cannot reliably re-include a path
+  excluded by a parent config.
+- Expected unpacked size: slim ~275 MB (Electron ~260 MB + app), offline ~640 MB. The platform CLI
+  is ~314 MB uncompressed / ~113 MB compressed; keeping it out of the default build is the single
+  largest win.
 - Package output: Linux `release/linux-unpacked/3pi-desk`; macOS
   `release/mac-arm64/3PI Desk for Claude Code.app` (Intel: `release/mac/`), with dmg/zip written
   to `release/`.
@@ -473,6 +495,9 @@ npm run dev                # electron-vite dev (if needed)
 npm run package            # host platform dir build (linux-unpacked or mac-<arch>/*.app)
 npm run package:mac        # explicit macOS dir build (run on macOS)
 npm run dist:mac           # dmg + zip (unsigned)
+npm run package:offline    # dir build that bundles the Claude Code CLI
+npm run dist:linux:offline # offline Linux AppImage + deb
+npm run dist:mac:offline   # offline macOS dmg + zip
 node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary (API cost!)
 ```
 

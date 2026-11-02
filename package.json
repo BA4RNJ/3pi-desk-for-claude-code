@@ -1,6 +1,6 @@
 {
   "name": "claude-desk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "3PI Desk for Claude Code - a local GUI for Claude Code",
   "main": "./out/main/index.js",
   "author": "BA4RNJ",
@@ -54,6 +54,8 @@
     "package:mac": "npm run build && electron-builder --mac dir",
     "prepackage:wsl": "node node_modules/electron/install.js",
     "package:wsl": "npm run build && electron-builder --linux dir --config electron-builder.wsl.yml",
+    "prepackage:offline": "node node_modules/electron/install.js",
+    "package:offline": "npm run build && electron-builder --dir --config electron-builder.offline.yml",
     "predist": "node node_modules/electron/install.js",
     "dist": "npm run build && electron-builder",
     "predist:linux": "node node_modules/electron/install.js",
@@ -61,28 +63,32 @@
     "predist:mac": "node node_modules/electron/install.js",
     "dist:mac": "npm run build && electron-builder --mac dmg zip",
     "predist:wsl": "node node_modules/electron/install.js",
-    "dist:wsl": "npm run build && electron-builder --linux AppImage deb --config electron-builder.wsl.yml"
+    "dist:wsl": "npm run build && electron-builder --linux AppImage deb --config electron-builder.wsl.yml",
+    "predist:offline": "node node_modules/electron/install.js",
+    "dist:linux:offline": "npm run build && electron-builder --linux AppImage deb --config electron-builder.offline.yml",
+    "dist:mac:offline": "npm run build && electron-builder --mac dmg zip --config electron-builder.offline.yml"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.316",
-    "diff": "^9.0.0",
-    "highlight.js": "^11.12.0",
-    "lucide-react": "^1.66.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "react-markdown": "^10.1.0",
-    "rehype-highlight": "^7.0.2",
-    "remark-gfm": "^4.0.1"
+    "tar": "^7.5.22"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "diff": "^9.0.0",
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "highlight.js": "^11.12.0",
+    "lucide-react": "^1.66.0",
     "playwright-core": "^1.64.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"

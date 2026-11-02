@@ -10,6 +10,7 @@ import type {
   AttachmentPickResult,
   CustomModel,
   DeskApi,
+  ClaudeCliStatus,
   EffortSetting,
   ExtensionsSnapshot,
   ExtensionTextFile,
@@ -213,6 +214,16 @@ const api: DeskApi = {
     ipcRenderer.invoke('open:console', providerId),
   openPath: (path: string): Promise<void> => ipcRenderer.invoke('open:path', path),
   openBackupDir: (): Promise<void> => ipcRenderer.invoke('open:backupDir'),
+  getClaudeCliStatus: (refresh = false): Promise<ClaudeCliStatus> =>
+    ipcRenderer.invoke('claudeCli:status', refresh),
+  downloadClaudeCli: (): Promise<ClaudeCliStatus> =>
+    ipcRenderer.invoke('claudeCli:download'),
+  setClaudeCliPath: (path: string | null): Promise<ClaudeCliStatus> =>
+    ipcRenderer.invoke('claudeCli:setPath', path),
+  pickClaudeCli: (): Promise<ClaudeCliStatus | null> =>
+    ipcRenderer.invoke('claudeCli:pick'),
+  onClaudeCliStatus: (callback: (payload: ClaudeCliStatus) => void) =>
+    subscribe('claude-cli:status', callback),
   onEvent: (callback: (payload: TabEventPayload) => void) =>
     subscribe('session:event', callback),
   onState: (callback: (payload: TabStatePayload) => void) =>

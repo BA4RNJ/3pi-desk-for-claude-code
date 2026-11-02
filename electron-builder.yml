@@ -2,6 +2,11 @@ appId: local.3pidesk
 productName: 3PI Desk for Claude Code
 copyright: Copyright © 2026 BA4RNJ
 electronDist: node_modules/electron/dist
+compression: maximum
+# Chromium ships ~55 locale packs; the app only uses English and Chinese.
+electronLanguages:
+  - en-US
+  - zh-CN
 directories:
   output: release
   buildResources: build
@@ -15,8 +20,14 @@ files:
   - "!tsconfig*.json"
   - "!build/**"
   - "!release/**"
+  - "!release-wsl/**"
+  - "!promo/**"
   - "!.git/**"
   - "!*.log"
+  # Default (slim) build: the Claude Code CLI is resolved from the user's
+  # installation or downloaded on first run. Use electron-builder.offline.yml
+  # to produce a build that bundles the platform CLI.
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
 asarUnpack:
   - node_modules/@anthropic-ai/**
 extraResources:

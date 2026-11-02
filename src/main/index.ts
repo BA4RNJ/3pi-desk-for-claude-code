@@ -46,6 +46,11 @@ import { ensureMacPath } from './shell-path'
 import { findModelContextWindow, getModels, testApi } from './models'
 import { versionInfo } from './version'
 import {
+  downloadClaudeCli,
+  getClaudeCliStatus,
+  setClaudeCliPath
+} from './claude-cli'
+import {
   backgroundLogs,
   backgroundRemove,
   backgroundStop,
@@ -296,6 +301,7 @@ function appDefaults(): AppDefaults {
     cwd: defaultCwd(),
     home: homedir(),
     platform: process.platform,
+    appVersion: app.getVersion(),
     wsl: runningUnderWsl
   }
 }
@@ -633,6 +639,21 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('app:versionInfo', () => versionInfo())
+  ipcMain.handle('claudeCli:status', (_event, refresh = false) =>
+    getClaudeCliStatus(Boolean(refresh))
+  )
+  ipcMain.handle('claudeCli:download', () => downloadClaudeCli())
+  ipcMain.handle('claudeCli:setPath', (_event, path: string | null) =>
+    setClaudeCliPath(path)
+  )
+  ipcMain.handle('claudeCli:pick', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择 Claude Code 可执行文件',
+      properties: ['openFile', 'showHiddenFiles']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return setClaudeCliPath(result.filePaths[0])
+  })
   ipcMain.handle('background:list', () => listBackgroundSessions())
   ipcMain.handle(
     'background:start',

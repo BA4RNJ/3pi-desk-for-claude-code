@@ -60,6 +60,8 @@ interface AppSettingsFile {
   profiles?: StoredProfile[]
   providerId?: string
   customModels?: CustomModel[]
+  /** Explicit path to a `claude` executable; overrides auto-detection. */
+  claudeCliPath?: string | null
 }
 
 function claudeDir(): string {
@@ -114,6 +116,15 @@ export function defaultCwd(): string {
   const saved = readAppSettings().cwd
   if (saved && existsSync(saved)) return saved
   return homedir()
+}
+
+export function getClaudeCliPath(): string | null {
+  const value = readAppSettings().claudeCliPath
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+export function saveClaudeCliPath(path: string | null): void {
+  writeAppSettings({ claudeCliPath: path && path.trim() ? path.trim() : null })
 }
 
 export function getPreferences(): AppPreferences {

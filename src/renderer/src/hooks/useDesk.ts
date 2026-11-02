@@ -6,6 +6,7 @@ import type {
   AppPreferences,
   Attachment,
   ChatSettingsSnapshot,
+  ClaudeCliStatus,
   CustomModel,
   DesktopEvent,
   EffortSetting,
@@ -245,6 +246,7 @@ export function useDesk() {
   const [theme, setThemeState] = useState<ThemeMode>(initialTheme)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<SessionInfo | null>(null)
+  const [claudeCli, setClaudeCli] = useState<ClaudeCliStatus | null>(null)
 
   const tabsRef = useRef(new Map<string, TabRuntimeData>())
   const tabOrderRef = useRef<string[]>([])
@@ -675,6 +677,23 @@ export function useDesk() {
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       void Notification.requestPermission().catch(() => undefined)
+    }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    window.desk
+      .getClaudeCliStatus()
+      .then((status) => {
+        if (!disposed) setClaudeCli(status)
+      })
+      .catch(() => undefined)
+    const unsubscribe = window.desk.onClaudeCliStatus((status) => {
+      if (!disposed) setClaudeCli(status)
+    })
+    return () => {
+      disposed = true
+      unsubscribe()
     }
   }, [])
 
@@ -1574,6 +1593,33 @@ export function useDesk() {
   const openPath = useCallback((path: string) => window.desk.openPath(path), [])
   const openBackupDir = useCallback(() => window.desk.openBackupDir(), [])
 
+  const refreshClaudeCli = useCallback(async (): Promise<ClaudeCliStatus> => {
+    const status = await window.desk.getClaudeCliStatus(true)
+    setClaudeCli(status)
+    return status
+  }, [])
+
+  const downloadClaudeCli = useCallback(async (): Promise<ClaudeCliStatus> => {
+    const status = await window.desk.downloadClaudeCli()
+    setClaudeCli(status)
+    return status
+  }, [])
+
+  const setClaudeCliPath = useCallback(
+    async (path: string | null): Promise<ClaudeCliStatus> => {
+      const status = await window.desk.setClaudeCliPath(path)
+      setClaudeCli(status)
+      return status
+    },
+    []
+  )
+
+  const pickClaudeCli = useCallback(async (): Promise<ClaudeCliStatus | null> => {
+    const status = await window.desk.pickClaudeCli()
+    if (status) setClaudeCli(status)
+    return status
+  }, [])
+
   return {
     booted,
     defaults,
@@ -1636,7 +1682,12 @@ export function useDesk() {
     setLanguage,
     openConsole,
     openPath,
-    openBackupDir
+    openBackupDir,
+    claudeCli,
+    refreshClaudeCli,
+    downloadClaudeCli,
+    setClaudeCliPath,
+    pickClaudeCli
   }
 }
 

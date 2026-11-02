@@ -19,6 +19,9 @@ npx electron-vite build
 npm run package                 # host platform -> release/linux-unpacked or release/mac-<arch>/*.app
 npm run package:mac             # explicit macOS dir build (run on macOS)
 npm run dist:mac                # dmg + zip (unsigned)
+npm run package:offline         # slim build + bundled Claude Code CLI (air-gapped)
+npm run dist:linux:offline      # offline Linux AppImage + deb
+npm run dist:mac:offline        # offline macOS dmg + zip
 node scripts/smoke-packaged.mjs # auto-detects Linux/macOS output; real API call; use with care
 ```
 
@@ -37,10 +40,12 @@ The project path contains spaces. Always quote it in shell commands.
    for `canUseTool` flows.
 3. **Default UI language is English.** UI source strings are Chinese; `src/renderer/src/i18n.ts`
    translates them at runtime. Add dictionary entries for new strings and test the Chinese toggle.
-4. **Keep the packaged native CLI path fix.** `resolveClaudeExecutable()` in
-   `src/main/session.ts` must point at `app.asar.unpacked`, and `electron-builder.yml` must keep
+4. **Keep the packaged native CLI path fix.** `resolveClaudeExecutable()` lives in
+   `src/main/claude-cli.ts` and is re-exported by `src/main/session.ts`. It must point at
+   `app.asar.unpacked`, and `electron-builder.yml` must keep
    `asarUnpack: node_modules/@anthropic-ai/**`. This must work on Linux and macOS; without it
-   sessions fail with `spawn ENOTDIR` in both packaged builds.
+   sessions fail with `spawn ENOTDIR` in both packaged builds. The default build excludes the
+   platform CLI package and resolves it at runtime; `electron-builder.offline.yml` bundles it.
 5. **Do not rename the npm package `claude-desk`** without migrating the app data directory
    (`~/.config/claude-desk/` on Linux, `~/Library/Application Support/claude-desk/` on macOS;
    workspaces, preferences, API profiles, backups). Product/display name is 3PI Desk for Claude
@@ -57,6 +62,9 @@ The project path contains spaces. Always quote it in shell commands.
   `Map<tabId, SessionManager>`.
 - `src/main/session.ts`: Claude Agent SDK `query()` per tab; streaming input, permissions,
   `canUseTool`, checkpoints, context usage, MCP status, effort restart.
+- `src/main/claude-cli.ts`: Claude Code CLI discovery (env → setting → bundled → downloaded →
+  system), first-run download, and the status shown in Settings → General.
+  `src/main/claude-cli-paths.ts` holds the pure path/version helpers.
 - `src/preload/index.ts` + `src/shared/types.ts`: the `window.desk` API; keep main/renderer in sync.
 - `src/shared/providers.ts`: provider presets and display names; `src/main/models.ts` handles
   catalog discovery, custom models, and connection testing.
@@ -95,7 +103,11 @@ The project path contains spaces. Always quote it in shell commands.
 - Global shortcut may not work on Wayland; PDF support depends on the model/gateway.
 - macOS builds are unsigned/unnotarized by default; CI publishes one runner architecture, so build
   from source if that does not match the target Mac.
-- App package size is ~640 MB because it bundles the Claude Code binary.
+- The slim package is ~275 MB unpacked (Electron ~260 MB + app). The Claude Code CLI is resolved
+  from the user's install, a previous download, or a first-run download. The offline build
+  (`npm run package:offline`) bundles the CLI and is ~640 MB.
+- First-run download needs network access (~146 MB); Settings → General exposes 重新检测 /
+  下载 CLI / 选择已有安装.
 
 ## Verification checklist
 
@@ -104,6 +116,9 @@ The project path contains spaces. Always quote it in shell commands.
 - Test a provider change and a custom model in Settings → API (model list, test connection, save).
 - Launch the **packaged** binary and send one real prompt (uses API credits) to verify the asar
   path fix.
+- Check Settings → General → Claude Code CLI: a system install or downloaded copy is detected, and
+  the slim build contains no `claude-agent-sdk-*` platform package. `npm run package:offline`
+  must instead find the bundled CLI under `app.asar.unpacked`.
 - Test permissions in a temp workspace: inline card, allow/deny/always, no full-screen backdrop.
 - Test English default and 中文 toggle in Settings → General.
 - Test workspace window: recent workspaces, session counts, open/add/remove.

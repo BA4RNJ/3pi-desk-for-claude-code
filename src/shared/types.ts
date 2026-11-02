@@ -149,6 +149,7 @@ export interface AppDefaults {
   cwd: string
   home: string
   platform: string
+  appVersion: string
   /** True when the process runs inside WSL (with or without WSLg). */
   wsl: boolean
 }
@@ -297,8 +298,31 @@ export interface PreferencesPatch {
   hiddenSessions?: string[]
 }
 
-export interface ExtensionTextFile {
-  path: string
+export type ClaudeCliSource =
+  | 'env'
+  | 'setting'
+  | 'bundled'
+  | 'cached'
+  | 'system'
+  | 'missing'
+
+export interface ClaudeCliProgress {
+  phase: 'download' | 'extract'
+  received: number
+  total: number | null
+}
+
+export interface ClaudeCliStatus {
+  path?: string
+  source: ClaudeCliSource
+  version?: string
+  expectedVersion: string
+  downloading: boolean
+  progress?: ClaudeCliProgress
+  error?: string
+}
+
+export interface ExtensionTextFile {  path: string
   text: string
 }
 
@@ -553,6 +577,11 @@ export interface DeskApi {
   openConsole(providerId?: string): Promise<void>
   openPath(path: string): Promise<void>
   openBackupDir(): Promise<void>
+  getClaudeCliStatus(refresh?: boolean): Promise<ClaudeCliStatus>
+  downloadClaudeCli(): Promise<ClaudeCliStatus>
+  setClaudeCliPath(path: string | null): Promise<ClaudeCliStatus>
+  pickClaudeCli(): Promise<ClaudeCliStatus | null>
+  onClaudeCliStatus(callback: (payload: ClaudeCliStatus) => void): () => void
   onEvent(callback: (payload: TabEventPayload) => void): () => void
   onState(callback: (payload: TabStatePayload) => void): () => void
   onPermission(callback: (payload: TabPermissionPayload) => void): () => void

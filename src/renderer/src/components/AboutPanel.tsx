@@ -93,7 +93,7 @@ export function AboutPanel() {
       </div>
 
       <p className="settings-note">
-        当前是本地构建，未配置发布源，因此应用不会自动下载安装包。更新 SDK 后重新打包即可；引擎版本由 SDK 内置。
+        当前是本地构建，未配置发布源，因此应用不会自动下载安装包。更新 SDK 后重新打包即可；Claude Code CLI 使用本机安装或按需下载。
       </p>
     </div>
   )

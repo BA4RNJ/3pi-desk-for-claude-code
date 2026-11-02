@@ -72,8 +72,8 @@ Release. macOS artifacts are unsigned and unnotarized unless Apple signing secre
 the repository; their filename includes the runner architecture.
 
 ```bash
-git tag -a v0.4.1 -m "3PI Desk for Claude Code v0.4.1"
-git push origin v0.4.1
+git tag -a v0.4.2 -m "3PI Desk for Claude Code v0.4.2"
+git push origin v0.4.2
 ```
 
 The `wsl-v*` workflow remains available for an optional WSL-only release, but normal `v*`

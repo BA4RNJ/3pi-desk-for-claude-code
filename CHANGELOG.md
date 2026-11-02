@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-11-03
+
+### Changed
+
+- Default packages are now slim. The Claude Code CLI is no longer bundled; it is resolved at
+  runtime from `CLAUDE_CODE_EXECUTABLE`, an explicit path in Settings, a previously downloaded
+  copy, or a system installation (`PATH`, `~/.local/bin/claude`, the official installer's
+  versions directory, Homebrew). Linux deb/AppImage drop from ~218/~273 MiB to ~97 MiB and the
+  unpacked app from ~640 MB to ~275 MB.
+- Settings → General now shows the Claude Code CLI path/version and offers 重新检测, 下载 CLI
+  (~146 MB), and 选择已有安装. An inline banner appears when no CLI is found.
+- Renderer-only dependencies moved to `devDependencies`; Chromium locales are limited to
+  `en-US` and `zh-CN`; `release-wsl/` and `promo/` are excluded from packages.
+- Added `electron-builder.offline.yml` plus `package:offline`, `dist:linux:offline`, and
+  `dist:mac:offline` for air-gapped installs that bundle the CLI.
+
+### Fixed
+
+- `CLAUDE_AGENT_SDK_CLIENT_APP` and the Settings version label now use the real app version.
+
 ## [0.4.1] - 2026-11-02
 
 ### Added

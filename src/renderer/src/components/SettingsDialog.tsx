@@ -1,6 +1,8 @@
 import {
   Blocks,
+  Download,
   ExternalLink,
+  FolderOpen,
   FolderPlus,
   Gauge,
   Info,
@@ -25,6 +27,7 @@ import type {
   ApiSettingsPatch,
   AppDefaults,
   AppPreferences,
+  ClaudeCliStatus,
   CustomModel,
   ModelOption,
   PermissionRules,
@@ -76,6 +79,11 @@ interface SettingsDialogProps {
   onApplyApiProfile: (id: string) => Promise<unknown>
   onOpenConsole: (providerId?: string) => void
   onOpenPath: (path: string) => void
+  claudeCli: ClaudeCliStatus | null
+  onRefreshClaudeCli: () => Promise<ClaudeCliStatus>
+  onDownloadClaudeCli: () => Promise<ClaudeCliStatus>
+  onPickClaudeCli: () => Promise<ClaudeCliStatus | null>
+  onClearClaudeCliPath: () => Promise<ClaudeCliStatus>
 }
 
 const THEMES: Array<{ id: ThemeMode; label: string; icon: typeof Sun }> = [
@@ -96,6 +104,20 @@ const NAV: Array<{ id: SettingsTab; label: string; icon: typeof Settings }> = [
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+const CLI_SOURCE_LABELS: Record<ClaudeCliStatus['source'], string> = {
+  env: '环境变量',
+  setting: '手动指定',
+  bundled: '应用内置',
+  cached: '已下载',
+  system: '系统安装',
+  missing: '未找到'
+}
+
+function formatBytes(value: number | null | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) return '—'
+  return `${Math.round(value / (1024 * 1024))} MB`
 }
 
 export function SettingsDialog({
@@ -119,7 +141,12 @@ export function SettingsDialog({
   onDeleteApiProfile,
   onApplyApiProfile,
   onOpenConsole,
-  onOpenPath
+  onOpenPath,
+  claudeCli,
+  onRefreshClaudeCli,
+  onDownloadClaudeCli,
+  onPickClaudeCli,
+  onClearClaudeCliPath
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab)
   const [preferences, setPreferences] = useState<AppPreferences>(
@@ -173,6 +200,8 @@ export function SettingsDialog({
   const [askText, setAskText] = useState('')
   const [denyText, setDenyText] = useState('')
   const [profileName, setProfileName] = useState('')
+  const [cliBusy, setCliBusy] = useState(false)
+  const [cliError, setCliError] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -197,6 +226,11 @@ export function SettingsDialog({
   }, [settings])
 
   const provider = findProviderPreset(providerId)
+  const cliProgress = claudeCli?.progress
+  const cliPercent =
+    cliProgress?.total && cliProgress.total > 0
+      ? Math.min(100, Math.round((cliProgress.received / cliProgress.total) * 100))
+      : null
   const savedProviderId =
     settings?.api.providerId || findProviderPreset(settings?.api.baseUrl)?.id || 'custom'
   const providerNeedsToken =
@@ -292,6 +326,18 @@ export function SettingsDialog({
       setMessage(errorText(removeError))
     } finally {
       setCustomBusy(false)
+    }
+  }
+
+  const runCli = async (action: () => Promise<unknown>): Promise<void> => {
+    setCliBusy(true)
+    setCliError('')
+    try {
+      await action()
+    } catch (cliActionError) {
+      setCliError(errorText(cliActionError))
+    } finally {
+      setCliBusy(false)
     }
   }
 
@@ -411,7 +457,7 @@ export function SettingsDialog({
             <AppMark size={40} className="settings-mark" />
             <div>
               <h2>3PI Desk</h2>
-              <p>AI 编程工作台 · v0.4.0</p>
+              <p>AI 编程工作台 · v{defaults?.appVersion || '—'}</p>
             </div>
           </div>
           <nav className="settings-nav">
@@ -486,6 +532,88 @@ export function SettingsDialog({
                   >
                     中文
                   </button>
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <span className="settings-label">Claude Code CLI</span>
+                <div className="settings-rows">
+                  <div className="settings-row">
+                    <span>状态</span>
+                    <strong>
+                      {claudeCli ? CLI_SOURCE_LABELS[claudeCli.source] : '检测中…'}
+                    </strong>
+                  </div>
+                  <div className="settings-row">
+                    <span>路径</span>
+                    <strong title={claudeCli?.path}>{claudeCli?.path || '—'}</strong>
+                  </div>
+                  <div className="settings-row">
+                    <span>版本</span>
+                    <strong>{claudeCli?.version || '—'}</strong>
+                  </div>
+                </div>
+                <p className="settings-note">应用不再内置 CLI：优先使用本机已安装的 claude，其次使用已下载的版本。没有找到时可以下载官方 CLI（约 146 MB），或手动选择可执行文件。</p>
+                {claudeCli?.downloading && (
+                  <div className="cli-progress">
+                    <div className="cli-progress-track">
+                      <div
+                        className="cli-progress-value"
+                        style={{ width: cliPercent != null ? `${cliPercent}%` : '35%' }}
+                      />
+                    </div>
+                    <span className="cli-progress-text">
+                      {cliProgress?.phase === 'extract'
+                        ? '正在解压…'
+                        : `正在下载… ${formatBytes(cliProgress?.received)}${
+                            cliProgress?.total
+                              ? ` / ${formatBytes(cliProgress.total)}`
+                              : ''
+                          }`}
+                    </span>
+                  </div>
+                )}
+                {cliError && <p className="settings-note cli-error">{cliError}</p>}
+                {!cliError && claudeCli?.error && (
+                  <p className="settings-note cli-error">{claudeCli.error}</p>
+                )}
+                <div className="cli-settings-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={cliBusy || claudeCli?.downloading}
+                    onClick={() => void runCli(onRefreshClaudeCli)}
+                  >
+                    <RefreshCw size={14} /> 重新检测
+                  </button>
+                  {claudeCli?.source === 'missing' && (
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={cliBusy || claudeCli.downloading}
+                      onClick={() => void runCli(onDownloadClaudeCli)}
+                    >
+                      <Download size={14} /> 下载 CLI
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={cliBusy || claudeCli?.downloading}
+                    onClick={() => void runCli(onPickClaudeCli)}
+                  >
+                    <FolderOpen size={14} /> 选择已有安装
+                  </button>
+                  {claudeCli?.source === 'setting' && (
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={cliBusy || claudeCli.downloading}
+                      onClick={() => void runCli(onClearClaudeCliPath)}
+                    >
+                      恢复自动检测
+                    </button>
+                  )}
                 </div>
               </div>
 

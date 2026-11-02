@@ -1,6 +1,5 @@
+import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import {
   query,
   type Options,
@@ -25,6 +24,9 @@ import type {
   TurnStats
 } from '../shared/types'
 import { SUPPORTED_IMAGE_MEDIA_TYPES, isSvgFile } from '../shared/attachments'
+import { ensureClaudeExecutable, resolveClaudeExecutable } from './claude-cli'
+
+export { resolveClaudeExecutable }
 
 /**
  * Monotonic across SessionManager instances: if a manager is recreated for the
@@ -87,35 +89,6 @@ class AsyncQueue<T> {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
-}
-
-export function resolveClaudeExecutable(): string | undefined {
-  const binaryName = process.platform === 'win32' ? 'claude.exe' : 'claude'
-  const packageName = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`
-
-  try {
-    const resolved = require.resolve(`${packageName}/${binaryName}`)
-    if (!resolved.includes('app.asar')) {
-      if (existsSync(resolved)) return resolved
-    } else {
-      const unpacked = resolved.replace(
-        /([\\/])app\.asar([\\/])/,
-        '$1app.asar.unpacked$2'
-      )
-      if (existsSync(unpacked)) return unpacked
-    }
-  } catch {
-    // fall through to the resources path
-  }
-
-  const fallback = join(
-    process.resourcesPath,
-    'app.asar.unpacked',
-    'node_modules',
-    ...packageName.split('/'),
-    binaryName
-  )
-  return existsSync(fallback) ? fallback : undefined
 }
 
 
@@ -197,12 +170,24 @@ export class SessionManager {
     }
     this.emitState()
 
+    let claudeExecutable: string
+    try {
+      claudeExecutable = await ensureClaudeExecutable()
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        connecting: false,
+        running: false,
+        error: errorMessage(error)
+      }
+      this.emitState()
+      throw error
+    }
+
     const queue = new AsyncQueue<SDKUserMessage>()
     const abort = new AbortController()
     this.queue = queue
     this.abort = abort
-
-    const claudeExecutable = resolveClaudeExecutable()
 
     const queryOptions: Options = {
       cwd: options.cwd,
@@ -226,7 +211,7 @@ export class SessionManager {
       abortController: abort,
       env: {
         ...process.env,
-        CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.0',
+        CLAUDE_AGENT_SDK_CLIENT_APP: `3pi-desk/${app.getVersion()}`,
         ...(options.contextWindow && options.contextWindow > 0
           ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(options.contextWindow) }
           : {})

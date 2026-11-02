@@ -7,6 +7,7 @@ import { setI18nLanguage, startI18n } from './i18n'
 import { useDesk } from './hooks/useDesk'
 import { findModel } from './lib/usage'
 import { ChatView } from './components/ChatView'
+import { ClaudeCliBanner } from './components/ClaudeCliBanner'
 import { Composer } from './components/Composer'
 import { ComposerControls, type ChatViewMode } from './components/ComposerControls'
 import { ConfirmDialog } from './components/ConfirmDialog'
@@ -218,6 +219,17 @@ export default function App() {
           onNew={() => desk.newChat()}
         />
 
+        <ClaudeCliBanner
+          status={desk.claudeCli}
+          onDownload={desk.downloadClaudeCli}
+          onPick={desk.pickClaudeCli}
+          onRefresh={desk.refreshClaudeCli}
+          onOpenSettings={() => {
+            setSettingsTab('general')
+            desk.setSettingsOpen(true)
+          }}
+        />
+
         <ChatView
           messages={activeTab.messages}
           cwd={activeTab.cwd || desk.cwd}
@@ -361,6 +373,11 @@ export default function App() {
           onApplyApiProfile={desk.applyApiProfile}
           onOpenConsole={() => void desk.openConsole()}
           onOpenPath={(path) => void desk.openPath(path)}
+          claudeCli={desk.claudeCli}
+          onRefreshClaudeCli={desk.refreshClaudeCli}
+          onDownloadClaudeCli={desk.downloadClaudeCli}
+          onPickClaudeCli={desk.pickClaudeCli}
+          onClearClaudeCliPath={() => desk.setClaudeCliPath(null)}
         />
       )}
 
