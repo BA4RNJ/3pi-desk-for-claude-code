@@ -42,8 +42,8 @@
   ],
   "scripts": {
     "dev": "electron-vite dev",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false && tsc --noEmit -p packages/agent-bridge/tsconfig.json",
+    "test": "sh scripts/native/build-bridge.sh && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs scripts/native/*.test.mjs",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "prepackage": "node node_modules/electron/install.js",

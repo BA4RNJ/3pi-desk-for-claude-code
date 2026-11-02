@@ -14,3 +14,15 @@ desktop.ini
 *.local
 .vscode/
 .idea/
+
+.cache/
+apps/macos/.build/
+# Native macOS local build and IDE artifacts
+apps/macos/.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.dSYM/
+*.app/
+*.dmg
+*.xcresult/

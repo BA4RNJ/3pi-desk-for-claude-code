@@ -63,6 +63,9 @@ Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从
 
 ## 项目状态与声明
 
+> macOS ARM64 原生版正在实验性迁移中，尚不能替代现有 Electron 版本；开发进度和限制见 [原生版开发说明](docs/MACOS-NATIVE.md)。
+
+
 - **为什么做这个项目。** 它面向希望继续使用 Claude Code 工作流、但把模型指向**第三方
   Anthropic Messages 兼容 API** 的用户。界面、模型选择器、供应商预设和配置写入都是围绕这个
   场景设计的。
