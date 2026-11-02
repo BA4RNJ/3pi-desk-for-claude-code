@@ -12,6 +12,8 @@ directories:
   buildResources: build
 files:
   - "!src/**"
+  - "!apps/**"
+  - "!packages/**"
   - "!docs/**"
   - "!README.md"
   - "!AGENTS.md"
@@ -22,6 +24,7 @@ files:
   - "!release/**"
   - "!release-wsl/**"
   - "!promo/**"
+  - "!.cache/**"
   - "!.git/**"
   - "!*.log"
   # Default (slim) build: the Claude Code CLI is resolved from the user's

@@ -55,6 +55,11 @@ The project path contains spaces. Always quote it in shell commands.
    forever on CLI confirmation prompts.
 7. **Never touch the user's real workspace for testing.** Use `/tmp/...` folders, and remove only
    sessions you created there.
+8. **Keep shared main services compatible with the native bridge.** `packages/agent-bridge` bundles
+   `src/main/*` with `electron` replaced by `native-platform.ts`. Do not use `BrowserWindow`,
+   `net`, `dialog`, or other Electron-only APIs in modules the bridge imports. `claude-cli.ts`
+   only uses `app.getPath/getVersion/getAppPath` and publishes status via
+   `subscribeClaudeCliStatus` (wired to windows in `index.ts`). `npm test` builds the bridge.
 
 ## Current architecture in one minute
 
@@ -77,6 +82,10 @@ The project path contains spaces. Always quote it in shell commands.
 - `src/main/background.ts`: `claude --bg` sessions (workspace trust required).
 - `src/main/settings.ts`: `~/.claude/settings.json` + app preferences.
 - `src/renderer/src/i18n.ts`: Chinese -> English DOM translator (default English).
+- `packages/agent-bridge/`: Node JSON-Lines bridge for the native macOS frontend;
+  `native-platform.ts` shims the Electron APIs the shared services need.
+- `apps/macos/`: experimental native SwiftUI macOS frontend (Apple Silicon, four-part version).
+  See `docs/MACOS-NATIVE.md`; UI parity is tracked in `docs/MACOS-UI-PARITY.md`.
 
 ## Important data flows
 
@@ -108,6 +117,10 @@ The project path contains spaces. Always quote it in shell commands.
   (`npm run package:offline`) bundles the CLI and is ~640 MB.
 - First-run download needs network access (~146 MB); Settings → General exposes 重新检测 /
   下载 CLI / 选择已有安装.
+- The native macOS SwiftUI frontend (`apps/macos`) is experimental and Apple Silicon only; full
+  UI parity is not certified (see `docs/MACOS-UI-PARITY.md`). Native releases use four-part tags
+  and are built on macOS with `scripts/native/package-standalone.sh`; `release.yml` only builds
+  the Electron channel.
 
 ## Verification checklist
 
@@ -119,6 +132,9 @@ The project path contains spaces. Always quote it in shell commands.
 - Check Settings → General → Claude Code CLI: a system install or downloaded copy is detected, and
   the slim build contains no `claude-agent-sdk-*` platform package. `npm run package:offline`
   must instead find the bundled CLI under `app.asar.unpacked`.
+- On Apple Silicon, run `npm test`, `scripts/native/test-transcript.sh`, and
+  `scripts/native/package-standalone.sh`; the native app must still find its bundled
+  `claude-agent-sdk-darwin-arm64` CLI.
 - Test permissions in a temp workspace: inline card, allow/deny/always, no full-screen backdrop.
 - Test English default and 中文 toggle in Settings → General.
 - Test workspace window: recent workspaces, session counts, open/add/remove.

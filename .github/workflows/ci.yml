@@ -37,7 +37,7 @@ jobs:
 
       - name: Guard against tracked build output
         run: |
-          if git ls-files | grep -E '^(node_modules|out|release|dist)/'; then
+          if git ls-files | grep -E '(^|/)(node_modules|out|release|release-wsl|dist|\.cache|\.build|DerivedData|xcuserdata)/|\.(app|dSYM|xcresult)/|\.(dmg|xcuserstate)$'; then
             echo "::error::Build output or dependencies are tracked by git."
             exit 1
           fi

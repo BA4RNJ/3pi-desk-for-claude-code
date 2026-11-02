@@ -24,8 +24,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  classify:
+    name: Classify release tag
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.classify.outputs.channel }}
+    steps:
+      - name: Classify
+        id: classify
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "channel=electron" >> "$GITHUB_OUTPUT"
+            echo "Electron release tag: $TAG"
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "channel=native" >> "$GITHUB_OUTPUT"
+            echo "Native macOS tag: $TAG (this workflow only builds Electron packages)"
+          else
+            echo "channel=unknown" >> "$GITHUB_OUTPUT"
+            echo "::error::Unrecognized release tag: $TAG"
+            exit 1
+          fi
+
   linux:
     name: Build Linux packages
+    needs: classify
+    if: needs.classify.outputs.channel == 'electron'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:

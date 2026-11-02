@@ -21,6 +21,8 @@ directories:
   buildResources: build
 files:
   - "!src/**"
+  - "!apps/**"
+  - "!packages/**"
   - "!docs/**"
   - "!README.md"
   - "!AGENTS.md"
@@ -31,6 +33,7 @@ files:
   - "!release/**"
   - "!release-wsl/**"
   - "!promo/**"
+  - "!.cache/**"
   - "!.git/**"
   - "!*.log"
 asarUnpack:

@@ -63,6 +63,24 @@ Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从
 
 ## 项目状态与声明
 
+当前提供 Electron 与 macOS SwiftUI 两条发布通道，功能基线和用户数据格式保持一致；两条通道可以按各自节奏发布。
+
+### 双通道版本规则
+
+版本号使用三段 Electron 版本与四段 Native 版本并行：
+
+| 通道 | 当前版本 | 适用平台 | 发布节奏 | 版本示例 |
+| --- | --- | --- | --- | --- |
+| Electron | `0.4.2` | Linux、WSL2/WSLg、macOS | 跨平台功能与 SDK 更新 | `0.4.3` |
+| Native SwiftUI | `0.1.4.1` | macOS | macOS 原生体验与系统 API 更新 | `0.1.4.2` |
+
+规则为：Electron `主版本.功能版本.修订版本`；Native
+`主版本.原生通道.对应 Electron 功能版本.Native 修订版本`。因此 `0.4.2` 对应
+`0.1.4.1`：第二段的 `1` 固定代表 Native SwiftUI，第三段 `4` 对齐 Electron 的功能版本，
+第四段只记录 Native 自身修订。两条线可以独立发布，且版本始终是纯数字、可直接排序。
+应用数据目录、Claude 配置和聊天记录仍保持兼容，便于按需切换客户端。
+
+
 - **为什么做这个项目。** 它面向希望继续使用 Claude Code 工作流、但把模型指向**第三方
   Anthropic Messages 兼容 API** 的用户。界面、模型选择器、供应商预设和配置写入都是围绕这个
   场景设计的。

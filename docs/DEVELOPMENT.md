@@ -4,6 +4,8 @@ This document is the technical handoff for the next developer or AI maintainer. 
 architecture, the important data flows, safety rules, and the traps that have already been found
 and fixed. Read this before changing code. `AGENTS.md` contains the short checklist.
 
+> Experimental macOS ARM64 SwiftUI migration: see [MACOS-NATIVE.md](MACOS-NATIVE.md). The existing Electron build remains the supported implementation.
+
 ## 1. Product decisions
 
 - Desktop app for Linux (tested on Ubuntu 24.04 / GNOME) and macOS (Apple Silicon / Intel).
@@ -20,7 +22,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
   `claude-desk` so that existing app preferences (`~/.config/claude-desk/`) and user data are
   preserved.
 
-## 2. Stack and versions (v0.4.2)
+## 2. Stack and versions (Electron 0.4.2 / Native 0.1.4.1)
 
 - Electron 45.2.1 (Node 24.22.x inside Electron).
 - React 19, TypeScript, Vite 8, electron-vite 6.

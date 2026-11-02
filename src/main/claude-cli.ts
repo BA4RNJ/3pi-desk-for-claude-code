@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net } from 'electron'
+import { app } from 'electron'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -11,6 +11,8 @@ import {
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { x as extractTar } from 'tar'
 import type {
@@ -226,11 +228,30 @@ function currentStatus(): ClaudeCliStatus {
   }
 }
 
+type ClaudeCliStatusListener = (status: ClaudeCliStatus) => void
+const statusListeners = new Set<ClaudeCliStatusListener>()
+
+/**
+ * Status is pushed instead of reading Electron windows here, so the same
+ * resolver also works inside the native macOS agent bridge (which shims
+ * `electron`).
+ */
+export function subscribeClaudeCliStatus(
+  listener: ClaudeCliStatusListener
+): () => void {
+  statusListeners.add(listener)
+  return () => {
+    statusListeners.delete(listener)
+  }
+}
+
 function emitStatus(): void {
   const status = currentStatus()
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send('claude-cli:status', status)
+  for (const listener of statusListeners) {
+    try {
+      listener(status)
+    } catch {
+      // A broken UI listener must not abort an in-flight download.
     }
   }
 }
@@ -256,34 +277,14 @@ export async function setClaudeCliPath(
   return getClaudeCliStatus(true)
 }
 
-function netText(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const request = net.request({ url, method: 'GET', redirect: 'follow' })
-    request.on('response', (response) => {
-      if (response.statusCode >= 400) {
-        request.abort()
-        reject(new Error(`HTTP ${response.statusCode}`))
-        return
-      }
-      const chunks: Buffer[] = []
-      let size = 0
-      response.on('data', (chunk: Buffer) => {
-        size += chunk.length
-        if (size > MAX_METADATA_BYTES) {
-          request.abort()
-          reject(new Error('下载元数据过大。'))
-          return
-        }
-        chunks.push(chunk)
-      })
-      response.on('end', () => {
-        resolve(Buffer.concat(chunks).toString('utf8'))
-      })
-      response.on('error', reject)
-    })
-    request.on('error', reject)
-    request.end()
-  })
+async function netText(url: string): Promise<string> {
+  const response = await fetch(url, { redirect: 'follow' })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const text = await response.text()
+  if (Buffer.byteLength(text) > MAX_METADATA_BYTES) {
+    throw new Error('下载元数据过大。')
+  }
+  return text
 }
 
 async function resolveDownload(
@@ -311,76 +312,50 @@ async function resolveDownload(
   return { url: metadata.dist.tarball, integrity: metadata.dist.integrity }
 }
 
-function downloadFile(
+async function downloadFile(
   url: string,
   destination: string,
   integrity: string | undefined,
   onProgress: (received: number, total: number | null) => void
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = net.request({ url, method: 'GET', redirect: 'follow' })
-    const output = createWriteStream(destination)
-    const hash = createHash('sha512')
-    let settled = false
-    let received = 0
-    let total: number | null = null
-    let lastProgress = 0
+  const response = await fetch(url, { redirect: 'follow' })
+  if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
+  if (!response.body) throw new Error('下载响应为空。')
 
-    const fail = (error: unknown): void => {
-      if (settled) return
-      settled = true
-      output.destroy()
-      request.abort()
-      reject(error instanceof Error ? error : new Error(String(error)))
-    }
+  const lengthHeader = response.headers.get('content-length')
+  const parsedLength = lengthHeader ? Number(lengthHeader) : NaN
+  const total = Number.isFinite(parsedLength) ? parsedLength : null
 
-    request.on('response', (response) => {
-      if (response.statusCode >= 400) {
-        fail(new Error(`下载失败：HTTP ${response.statusCode}`))
-        return
+  const hash = createHash('sha512')
+  let received = 0
+  let lastProgress = 0
+  const meter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      received += chunk.length
+      hash.update(chunk)
+      const now = Date.now()
+      if (now - lastProgress >= PROGRESS_INTERVAL_MS) {
+        lastProgress = now
+        onProgress(received, total)
       }
-      const header = response.headers['content-length']
-      const rawLength = Array.isArray(header) ? header[0] : header
-      const parsedLength = Number(rawLength)
-      total = Number.isFinite(parsedLength) ? parsedLength : null
-
-      response.on('data', (chunk: Buffer) => {
-        received += chunk.length
-        hash.update(chunk)
-        if (!output.write(chunk)) {
-          const stream = response as unknown as NodeJS.ReadableStream
-          stream.pause()
-          output.once('drain', () => stream.resume())
-        }
-        const now = Date.now()
-        if (now - lastProgress >= PROGRESS_INTERVAL_MS) {
-          lastProgress = now
-          onProgress(received, total)
-        }
-      })
-      response.on('end', () => {
-        output.end(() => {
-          if (settled) return
-          if (integrity?.startsWith('sha512-')) {
-            const expected = integrity.slice('sha512-'.length)
-            const actual = hash.digest('base64')
-            if (actual !== expected) {
-              settled = true
-              reject(new Error('CLI 下载校验失败，请重试。'))
-              return
-            }
-          }
-          settled = true
-          onProgress(received, total ?? received)
-          resolve()
-        })
-      })
-      response.on('error', fail)
-    })
-    request.on('error', fail)
-    output.on('error', fail)
-    request.end()
+      callback(null, chunk)
+    }
   })
+
+  await pipeline(
+    Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+    meter,
+    createWriteStream(destination)
+  )
+  onProgress(received, total ?? received)
+
+  if (integrity?.startsWith('sha512-')) {
+    const expected = integrity.slice('sha512-'.length)
+    const actual = hash.digest('base64')
+    if (actual !== expected) {
+      throw new Error('CLI 下载校验失败，请重试。')
+    }
+  }
 }
 
 async function performDownload(): Promise<ClaudeCliStatus> {

@@ -47,13 +47,13 @@ async function latestSdkVersion(): Promise<string | undefined> {
   }
 }
 
-export async function versionInfo(): Promise<VersionInfo> {
+export async function versionInfo(checkLatest = true): Promise<VersionInfo> {
   return {
     app: app.getVersion(),
     electron: process.versions.electron || '',
     node: process.versions.node || '',
     sdk: sdkVersion(),
     claudeCode: await claudeCodeVersion(),
-    latestSdk: await latestSdkVersion()
+    latestSdk: checkLatest ? await latestSdkVersion() : undefined
   }
 }
