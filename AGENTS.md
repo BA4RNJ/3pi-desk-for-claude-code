@@ -84,7 +84,8 @@ The project path contains spaces. Always quote it in shell commands.
 - `src/renderer/src/i18n.ts`: Chinese -> English DOM translator (default English).
 - `packages/agent-bridge/`: Node JSON-Lines bridge for the native macOS frontend;
   `native-platform.ts` shims the Electron APIs the shared services need.
-- `apps/macos/`: experimental native SwiftUI macOS frontend (Apple Silicon, four-part version).
+- `apps/macos/`: native SwiftUI macOS frontend (Apple Silicon, four-part version; UI parity is
+  still being completed).
   See `docs/MACOS-NATIVE.md`; UI parity is tracked in `docs/MACOS-UI-PARITY.md`.
 
 ## Important data flows
@@ -117,10 +118,10 @@ The project path contains spaces. Always quote it in shell commands.
   (`npm run package:offline`) bundles the CLI and is ~640 MB.
 - First-run download needs network access (~146 MB); Settings → General exposes 重新检测 /
   下载 CLI / 选择已有安装.
-- The native macOS SwiftUI frontend (`apps/macos`) is experimental and Apple Silicon only; full
-  UI parity is not certified (see `docs/MACOS-UI-PARITY.md`). Native releases use four-part tags
-  and are built on macOS with `scripts/native/package-standalone.sh`; `release.yml` only builds
-  the Electron channel.
+- The native macOS SwiftUI frontend (`apps/macos`) is Apple Silicon only and released as a
+  separate channel; full UI parity is not yet certified (see `docs/MACOS-UI-PARITY.md`). Native
+  releases use four-part tags and are built on macOS with `scripts/native/package-standalone.sh`;
+  `release.yml` only builds the Electron channel.
 - macOS Electron verification in `ci.yml` is opt-in (`ENABLE_MACOS_CI=true`). It is skipped by
   default because macOS arm64 runners can cancel queued jobs, which marks CI red and sends
   failure notifications. Native macOS builds use `release-native.yml`.

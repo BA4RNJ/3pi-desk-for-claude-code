@@ -4,7 +4,8 @@ This document is the technical handoff for the next developer or AI maintainer. 
 architecture, the important data flows, safety rules, and the traps that have already been found
 and fixed. Read this before changing code. `AGENTS.md` contains the short checklist.
 
-> Experimental macOS ARM64 SwiftUI migration: see [MACOS-NATIVE.md](MACOS-NATIVE.md). The existing Electron build remains the supported implementation.
+> Native macOS ARM64 SwiftUI channel: see [MACOS-NATIVE.md](MACOS-NATIVE.md). The Electron build
+> remains the default cross-platform implementation; native UI parity is still being completed.
 
 ## 1. Product decisions
 
