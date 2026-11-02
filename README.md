@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/BA4RNJ/3pi-desk-for-claude-code/actions/workflows/ci.yml/badge.svg)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)](#系统要求)
+[![Platform: Linux / macOS](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg)](#系统要求)
 [![Release](https://img.shields.io/github/v/release/BA4RNJ/3pi-desk-for-claude-code)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases)
 
 一个本地 Electron 图形界面，让你在**使用第三方 Anthropic 兼容 API 的同时，继续使用 Claude Code
@@ -77,7 +77,9 @@
 
 ## 系统要求
 
-- Linux。主要在 Ubuntu 24.04 + GNOME 上验证。
+- Linux（主要在 Ubuntu 24.04 + GNOME 上验证）或 macOS（Apple Silicon / Intel）。
+- macOS 安装包目前未签名、未公证；首次打开请右键 → 打开，或执行
+  `xattr -dr com.apple.quarantine "/Applications/3PI Desk for Claude Code.app"`。
 - 打包版已经包含 Electron 和 Claude Code 原生二进制，**不需要另外安装 Claude Code**。
 - 任意 **Anthropic Messages 兼容** 的 API 供应商。默认是 OpenCode Go /
   `deepseek-v4.1-flash`；供应商没有列出的模型可以手动添加，并填写上下文窗口。
@@ -89,7 +91,10 @@
 
 - **AppImage**：`chmod +x 3pi-desk-*.AppImage` 后直接运行。
 - **deb**：`sudo apt install ./3pi-desk-*.deb`。
-- 每个版本附带 `SHA256SUMS`、`LICENSE` 和 `THIRD_PARTY_NOTICES.md`。
+- **macOS**：下载 `3pi-desk-*.dmg`（当前 CI 产物未签名，文件名包含架构）。如果产物架构与你的
+  Mac 不匹配，请从源码构建，见下文。
+- 每个版本附带 `SHA256SUMS`（macOS 为 `SHA256SUMS-macos`）、`LICENSE` 和
+  `THIRD_PARTY_NOTICES.md`。
 
 发布包内包含 Anthropic 的 Claude Code CLI；再分发和使用该二进制需遵守 Anthropic 的条款。
 
@@ -108,10 +113,14 @@ WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包�
 
 **不需要。** 打包版和源码版都通过 Claude Agent SDK 内置了官方 Claude Code CLI：
 
-- **打包版**：CLI 位于
+- **Linux 打包版**：CLI 位于
   `release/linux-unpacked/resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`。
-- **源码版**：`npm install` 会安装 `@anthropic-ai/claude-agent-sdk` 及平台包
-  `@anthropic-ai/claude-agent-sdk-linux-x64`（约 314 MB），其中包含同一个二进制。
+- **macOS 打包版**：CLI 位于
+  `release/mac-arm64/3PI Desk for Claude Code.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`
+  （Intel 构建位于 `release/mac/`，平台包为 `darwin-x64`）。
+- **源码版**：`npm install` 会安装 `@anthropic-ai/claude-agent-sdk` 及当前平台包
+  （Linux `...-linux-x64`、Apple Silicon `...-darwin-arm64`、Intel `...-darwin-x64`，约 314 MB），
+  其中包含同一个二进制。
 
 如果你**已经安装过 Claude Code**，两者可以共存：应用不会调用全局 `claude` 命令，但会共享
 `~/.claude/` 下的设置、MCP 配置、Skills、Agents、Hooks 和聊天记录。因此你已有的会话会出现在
@@ -145,11 +154,16 @@ WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包�
 打包后的可执行文件位于：
 
 ```text
+# Linux
 /path/to/3pi-desk-for-claude-code/release/linux-unpacked/3pi-desk
+
+# macOS
+/path/to/3pi-desk-for-claude-code/release/mac-arm64/3PI Desk for Claude Code.app
 ```
 
-应用自己的偏好保存在 `~/.config/claude-desk/`，并复用 `~/.claude/` 里已有的 Claude Code 配置
-和聊天记录。
+macOS 上也可以直接双击 `.app`，或把它拖进「应用程序」。应用自己的偏好保存在 Linux 的
+`~/.config/claude-desk/`、macOS 的 `~/Library/Application Support/claude-desk/`，并复用
+`~/.claude/` 里已有的 Claude Code 配置和聊天记录。
 
 ## 首次使用
 
@@ -269,11 +283,19 @@ npm ci
 npm run typecheck
 npm test
 npm run build
-npm run package   # release/linux-unpacked/3pi-desk
-npm run dist      # AppImage + deb
+
+# Linux
+npm run package:linux   # release/linux-unpacked/3pi-desk
+npm run dist:linux      # AppImage + deb
+
+# macOS（必须在 Mac 上执行）
+npm run package:mac     # release/mac-<arch>/3PI Desk for Claude Code.app
+npm run dist:mac        # dmg + zip（未签名）
 ```
 
-构建输出在 `release/`。桌面入口和 `3pi-desk` 启动器指向 `release/linux-unpacked/`。
+构建输出在 `release/`。Linux 桌面入口和 `3pi-desk` 启动器指向 `release/linux-unpacked/`；
+macOS 输出 `release/mac-arm64/`（Intel 为 `release/mac/`），默认未签名，分发前需要配置
+Developer ID 签名与 Apple 公证。`npm run package` / `npm run dist` 会按当前平台构建。
 
 架构和数据流见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)；安装、第三方 API 配置和排错教程见
 [docs/SETUP.md](docs/SETUP.md)。
@@ -363,7 +385,9 @@ Settings → API:
 
 ## Requirements
 
-- Linux. Tested on Ubuntu 24.04 with GNOME.
+- Linux (tested on Ubuntu 24.04 with GNOME) or macOS (Apple Silicon / Intel).
+- macOS builds are unsigned and unnotarized; right-click → Open on first launch, or run
+  `xattr -dr com.apple.quarantine "/Applications/3PI Desk for Claude Code.app"`.
 - The packaged build includes Electron and the Claude Code native binary; no separate Claude Code
   install is required.
 - Any **Anthropic Messages-compatible** API provider. Settings → API includes presets for
@@ -374,12 +398,15 @@ Settings → API:
 
 ## Download
 
-Download Linux packages from
+Download Linux and macOS packages from
 [Releases](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases):
 
 - **AppImage**: `chmod +x 3pi-desk-*.AppImage` and run it.
 - **deb**: `sudo apt install ./3pi-desk-*.deb`.
-- Each release includes `SHA256SUMS`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`.
+- **macOS**: download `3pi-desk-*.dmg` (current CI artifacts are unsigned; the filename includes
+  the architecture). If the architecture does not match your Mac, build from source; see below.
+- Each release includes `SHA256SUMS` (or `SHA256SUMS-macos`), `LICENSE`, and
+  `THIRD_PARTY_NOTICES.md`.
 
 Release packages include Anthropic's Claude Code CLI; redistributing and using that binary is
 subject to Anthropic's terms.
@@ -402,10 +429,14 @@ troubleshooting.
 **No.** The packaged build and the source build both bundle the official Claude Code CLI through
 the Claude Agent SDK, so a separate `claude` installation is not required:
 
-- **Packaged app:** the CLI binary ships under
+- **Linux packaged app:** the CLI binary ships under
   `release/linux-unpacked/resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`.
-- **From source:** `npm install` pulls `@anthropic-ai/claude-agent-sdk` and its platform package
-  (`@anthropic-ai/claude-agent-sdk-linux-x64`, ~314 MB), which contains the same binary.
+- **macOS packaged app:** the CLI binary ships under
+  `release/mac-arm64/3PI Desk for Claude Code.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`
+  (Intel builds use `release/mac/` and `darwin-x64`).
+- **From source:** `npm install` pulls `@anthropic-ai/claude-agent-sdk` and the current platform
+  package (Linux `...-linux-x64`, Apple Silicon `...-darwin-arm64`, Intel `...-darwin-x64`;
+  ~314 MB), which contains the same binary.
 
 If you **already have Claude Code installed**, the two coexist safely. The app deliberately uses
 its own bundled CLI (it never invokes the global `claude` binary), but it shares the same
@@ -443,11 +474,16 @@ From the application menu, search for **3PI Desk for Claude Code**, or run:
 The unpacked build lives at:
 
 ```text
+# Linux
 /path/to/3pi-desk-for-claude-code/release/linux-unpacked/3pi-desk
+
+# macOS
+/path/to/3pi-desk-for-claude-code/release/mac-arm64/3PI Desk for Claude Code.app
 ```
 
-The app keeps its own preferences in `~/.config/claude-desk/` and uses the existing Claude Code
-configuration and transcripts in `~/.claude/`.
+On macOS you can also double-click the `.app` or drag it into Applications. The app keeps its own
+preferences in `~/.config/claude-desk/` on Linux and `~/Library/Application Support/claude-desk/`
+on macOS, and uses the existing Claude Code configuration and transcripts in `~/.claude/`.
 
 ## First run
 
@@ -591,12 +627,20 @@ npm ci
 npm run typecheck
 npm test
 npm run build
-npm run package   # release/linux-unpacked/3pi-desk
-npm run dist      # AppImage + deb
+
+# Linux
+npm run package:linux   # release/linux-unpacked/3pi-desk
+npm run dist:linux      # AppImage + deb
+
+# macOS (must run on macOS)
+npm run package:mac     # release/mac-<arch>/3PI Desk for Claude Code.app
+npm run dist:mac        # dmg + zip (unsigned)
 ```
 
-The unpacked build is written to `release/`. The desktop entry and `3pi-desk` launcher point to
-`release/linux-unpacked/`.
+The unpacked build is written to `release/`. The Linux desktop entry and `3pi-desk` launcher point
+to `release/linux-unpacked/`; macOS output goes to `release/mac-arm64/` (or `release/mac/` on
+Intel). macOS builds are unsigned by default; configure a Developer ID certificate and Apple
+notarization before distributing. `npm run package` / `npm run dist` build for the host platform.
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for architecture, data flow, and maintenance
 details, and [docs/SETUP.md](docs/SETUP.md) for installation and third-party API configuration.

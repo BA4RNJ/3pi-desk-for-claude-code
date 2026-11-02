@@ -76,6 +76,11 @@ export default function App() {
 
   useEffect(() => window.desk.onNewTabRequest(() => desk.newChat()), [desk.newChat])
 
+  useEffect(
+    () => window.desk.onOpenSettingsRequest(() => desk.setSettingsOpen(true)),
+    [desk.setSettingsOpen]
+  )
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {

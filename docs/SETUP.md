@@ -49,8 +49,14 @@ ANTHROPIC_BASE_URL（第三方 Anthropic 兼容 API）
 打包版位于仓库的：
 
 ```text
+# Linux
 release/linux-unpacked/3pi-desk
+
+# macOS（Apple Silicon；Intel 为 release/mac/）
+release/mac-arm64/3PI Desk for Claude Code.app
 ```
+
+macOS 上可以直接双击 `.app`，或拖进「应用程序」。未签名构建首次打开需要右键 → 打开。
 
 如果已经按 README 的桌面集成安装过，也可以在应用菜单搜索 **3PI Desk for Claude Code**，或直接运行：
 
@@ -82,28 +88,39 @@ release/linux-unpacked/3pi-desk
 
 ## 4. 从源码运行或构建
 
-要求：Node.js 24+、npm 11+、Linux（当前主要验证 Ubuntu 24.04 / GNOME）。
+要求：Node.js 24+、npm 11+，Linux（主要在 Ubuntu 24.04 / GNOME 验证）或 macOS。
 
 ```bash
 cd /path/to/3pi-desk-for-claude-code
 npm ci
 npm run dev          # 开发模式
-# 或
+
 npm run typecheck
 npm run build
-npm run package      # 输出 release/linux-unpacked/3pi-desk
+
+# Linux
+npm run package:linux   # 输出 release/linux-unpacked/3pi-desk
+npm run dist:linux      # AppImage + deb
+
+# macOS（必须在 Mac 上执行）
+npm run package:mac     # 输出 release/mac-arm64/3PI Desk for Claude Code.app
+npm run dist:mac        # dmg + zip（默认未签名）
 ```
 
 `npm ci` 会自动安装：
 
 - `@anthropic-ai/claude-agent-sdk`
-- 平台包 `@anthropic-ai/claude-agent-sdk-linux-x64`（约 314 MB，内含 `claude` 二进制）
+- 当前平台包（约 314 MB，内含 `claude` 二进制）：
+  - Linux：`@anthropic-ai/claude-agent-sdk-linux-x64`
+  - Apple Silicon：`@anthropic-ai/claude-agent-sdk-darwin-arm64`
+  - Intel Mac：`@anthropic-ai/claude-agent-sdk-darwin-x64`
 
 因此源码版同样不需要全局安装 Claude Code CLI。
 
 注意：
 
-- 不同平台需要对应的平台包（如 `...-darwin-arm64`）。当前项目只针对 Linux 打包。
+- macOS 构建必须在 macOS 上执行。默认不签名；分发给他人前需要 Developer ID 签名与 Apple
+  公证，否则 Gatekeeper 会阻止首次打开（本机右键 → 打开可绕过）。
 - 如果打包后出现 `spawn ENOTDIR`，说明 `asarUnpack` 或 `resolveClaudeExecutable()` 的
   `app.asar.unpacked` 路径修复被破坏了，请保留现有实现。
 
@@ -374,8 +391,15 @@ ANTHROPIC_BASE_URL (third-party Anthropic-compatible API)
 The unpacked build is at:
 
 ```text
+# Linux
 release/linux-unpacked/3pi-desk
+
+# macOS (Apple Silicon; use release/mac/ on Intel)
+release/mac-arm64/3PI Desk for Claude Code.app
 ```
+
+On macOS, double-click the `.app` or drag it into Applications. Unsigned builds need
+right-click → Open on first launch.
 
 If desktop integration is installed, search for **3PI Desk for Claude Code** in the application
 menu, or run:
@@ -403,29 +427,41 @@ Verification:
 
 ## 4. Run or build from source
 
-Requirements: Node.js 24+, npm 11+, Linux (Ubuntu 24.04 / GNOME is the main tested environment).
+Requirements: Node.js 24+, npm 11+, Linux (Ubuntu 24.04 / GNOME is the main tested environment)
+or macOS (Apple Silicon / Intel).
 
 ```bash
 cd /path/to/3pi-desk-for-claude-code
 npm ci
 npm run dev          # development
-# or
+
 npm run typecheck
 npm run build
-npm run package      # outputs release/linux-unpacked/3pi-desk
+
+# Linux
+npm run package:linux   # outputs release/linux-unpacked/3pi-desk
+npm run dist:linux      # AppImage + deb
+
+# macOS (must run on macOS)
+npm run package:mac     # outputs release/mac-arm64/3PI Desk for Claude Code.app
+npm run dist:mac        # dmg + zip (unsigned by default)
 ```
 
 `npm ci` installs:
 
 - `@anthropic-ai/claude-agent-sdk`
-- the platform package `@anthropic-ai/claude-agent-sdk-linux-x64` (~314 MB, containing `claude`)
+- the platform package for the current host (~314 MB, containing `claude`):
+  - Linux: `@anthropic-ai/claude-agent-sdk-linux-x64`
+  - Apple Silicon: `@anthropic-ai/claude-agent-sdk-darwin-arm64`
+  - Intel Mac: `@anthropic-ai/claude-agent-sdk-darwin-x64`
 
 The source build therefore also does not need a global Claude Code CLI.
 
 Notes:
 
-- Other platforms need their matching platform package (for example `...-darwin-arm64`). This
-  project currently packages for Linux.
+- macOS builds must run on macOS. They are unsigned by default; configure a Developer ID
+  certificate and Apple notarization before distributing, otherwise Gatekeeper blocks the first
+  launch (right-click → Open bypasses this locally).
 - If the packaged app fails with `spawn ENOTDIR`, the `asarUnpack` setting or the
   `app.asar.unpacked` path fix in `resolveClaudeExecutable()` is broken. Keep both.
 

@@ -15,7 +15,7 @@ small, focused changes with a clear reproduction are the easiest to review.
 
 ## Development setup
 
-Requirements: Linux, Node.js 24+, npm 11+.
+Requirements: Linux or macOS, Node.js 24+, npm 11+.
 
 ```bash
 git clone https://github.com/BA4RNJ/3pi-desk-for-claude-code.git
@@ -30,11 +30,14 @@ Useful commands:
 npm run typecheck
 npm test
 npx electron-vite build
-npm run package       # release/linux-unpacked/3pi-desk
-npm run dist          # AppImage + deb
+npm run package       # host platform: linux-unpacked or mac-<arch>/*.app
+npm run package:mac   # explicit macOS dir build (run on macOS)
+npm run dist:linux    # AppImage + deb
+npm run dist:mac      # dmg + zip (unsigned)
 ```
 
-`npm ci` downloads Electron and the Claude Agent SDK platform package (about 314 MB).
+`npm ci` downloads Electron and the Claude Agent SDK platform package for the current platform
+(about 314 MB).
 
 ## Ground rules
 

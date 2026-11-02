@@ -558,4 +558,5 @@ export interface DeskApi {
   onPermission(callback: (payload: TabPermissionPayload) => void): () => void
   onPermissionCancel(callback: (payload: TabPermissionCancelPayload) => void): () => void
   onNewTabRequest(callback: () => void): () => void
+  onOpenSettingsRequest(callback: () => void): () => void
 }

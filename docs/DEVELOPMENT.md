@@ -6,7 +6,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
 
 ## 1. Product decisions
 
-- Desktop app for Linux (tested on Ubuntu 24.04 / GNOME).
+- Desktop app for Linux (tested on Ubuntu 24.04 / GNOME) and macOS (Apple Silicon / Intel).
 - Electron main process + preload bridge + React renderer.
 - Claude Code is driven through the **official Claude Agent SDK**, not by scraping the CLI UI.
 - The app mirrors the official Claude Code CLI semantics where practical: tabs, workspaces,
@@ -26,7 +26,8 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
 - React 19, TypeScript, Vite 8, electron-vite 6.
 - `@anthropic-ai/claude-agent-sdk` 0.3.316 (bundles Claude Code 2.1.316).
 - `electron-builder` 26 with the locally installed Electron distribution.
-- Native binary package: `@anthropic-ai/claude-agent-sdk-linux-x64`.
+- Native binary package: `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` (`linux-x64`,
+  `darwin-arm64`, or `darwin-x64`).
 - markdown: react-markdown + remark-gfm + rehype-highlight.
 - Icons: lucide-react.
 - Scripts: Playwright Core for UI smoke tests (dev only).
@@ -37,9 +38,11 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
 3PI desk for Claude code/
   package.json                  app scripts, name stays "claude-desk"
   electron.vite.config.ts       main/preload/renderer build
-  electron-builder.yml          Linux packaging, asarUnpack, productName
+  electron-builder.yml          Linux/macOS packaging, asarUnpack, productName
   build/icon.png                package icon
+  build/entitlements.mac.plist  hardened-runtime entitlements (signing/notarization)
   resources/icon.png|svg        window/tray/desktop icon
+  resources/trayTemplate*.png   macOS menu-bar template icon (1x/2x)
   src/
     shared/types.ts             IPC contracts, session/model/settings types
     main/
@@ -413,8 +416,15 @@ the source UI is Chinese and the product must default to English.
   it would reset the user's workspaces/preferences. Change `productName`/UI brand instead.
 - `electron-builder.yml`: `productName: 3PI Desk for Claude Code`, `executableName: 3pi-desk`,
   `appId: local.3pidesk`, `electronDist: node_modules/electron/dist` (avoid network downloads),
-  `asarUnpack: node_modules/@anthropic-ai/**`.
-- Package output: `release/linux-unpacked/3pi-desk`.
+  `asarUnpack: node_modules/@anthropic-ai/**`. Linux targets AppImage/deb; macOS targets dmg/zip
+  with `hardenedRuntime` and `build/entitlements.mac.plist`.
+- Package output: Linux `release/linux-unpacked/3pi-desk`; macOS
+  `release/mac-arm64/3PI Desk for Claude Code.app` (Intel: `release/mac/`), with dmg/zip written
+  to `release/`.
+- macOS builds must run on macOS. Local unsigned builds open via right-click → Open; distribution
+  needs Developer ID signing plus Apple notarization. CI publishes one unsigned build whose
+  architecture matches the macOS runner; build locally if that does not match the target Mac.
+  `build/icon.png` is 512×512, the minimum electron-builder accepts for icns conversion.
 - Desktop integration installed at:
   - `~/.local/share/applications/3pi-desk.desktop`
   - `~/桌面/3pi-desk.desktop`
@@ -424,9 +434,16 @@ the source UI is Chinese and the product must default to English.
     `Exec="/path/to/3pi-desk-for-claude-code/release/linux-unpacked/3pi-desk"`
 - The old `claude-desk` menu entry/desktop shortcut is removed; the old app files in
   `~/Applications/claude-desk` may remain as a backup.
-- Ubuntu-specific: main calls `app.disableHardwareAcceleration()` and
-  `app.commandLine.appendSwitch('disable-gpu-sandbox')`; without them Electron can crash on this
-  machine's sandbox/GPU setup. Keep unless the environment changes.
+- Linux-specific: main calls `app.disableHardwareAcceleration()` and
+  `app.commandLine.appendSwitch('disable-gpu-sandbox')` only when `process.platform === 'linux'`;
+  without them Electron can crash on this machine's sandbox/GPU setup. macOS keeps hardware
+  acceleration.
+- macOS-specific: `installApplicationMenu()` installs the standard App/File/Edit/View/Window menus
+  (without them Cmd+C/V/A/Q/W do not work); the tray uses `resources/trayTemplate.png` as a
+  template image; closing the last window keeps the app alive so the Dock or tray can reopen it.
+  `ensureMacPath()` in `src/main/shell-path.ts` asks the login shell for its PATH once when the app
+  looks Finder-launched, so Homebrew/nvm binaries such as `git` and `node` are available to Claude
+  Code tools. The X11 WM class switch is Linux-only.
 - Because hardware acceleration is disabled, **avoid `backdrop-filter` on large surfaces**. The
   full-screen Settings backdrop and the topbar previously used `blur()`, which made the Settings
   dialog feel very laggy; both were removed. Use a translucent solid background instead.
@@ -453,8 +470,10 @@ cd /path/to/3pi-desk-for-claude-code
 npm run typecheck          # main + renderer
 npx electron-vite build    # output in out/
 npm run dev                # electron-vite dev (if needed)
-npm run package            # typecheck + build + electron-builder dir
-node scripts/smoke-packaged.mjs   # launches packaged app and sends a tiny prompt (API cost!)
+npm run package            # host platform dir build (linux-unpacked or mac-<arch>/*.app)
+npm run package:mac        # explicit macOS dir build (run on macOS)
+npm run dist:mac           # dmg + zip (unsigned)
+node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary (API cost!)
 ```
 
 - `scripts/` contains Playwright-based smoke tests for permissions, questions, tabs, attachments,
@@ -473,8 +492,8 @@ node scripts/smoke-packaged.mjs   # launches packaged app and sends a tiny promp
 
 | Purpose | Path |
 | --- | --- |
-| App preferences (cwd, theme accent, recents, profiles, providerId, custom models) | `~/.config/claude-desk/settings.json` |
-| Chat deletion backups | `~/.config/claude-desk/session-backups/` |
+| App preferences (cwd, theme accent, recents, profiles, providerId, custom models) | Linux: `~/.config/claude-desk/settings.json`; macOS: `~/Library/Application Support/claude-desk/settings.json` |
+| Chat deletion backups | Linux: `~/.config/claude-desk/session-backups/`; macOS: `~/Library/Application Support/claude-desk/session-backups/` |
 | Claude Code user settings (API env, permissions, hooks) | `~/.claude/settings.json` |
 | Claude Code global state (projects/MCP/trust) | `~/.claude.json` |
 | Claude Code transcripts | `~/.claude/projects/<project>/<session-id>.jsonl` |
@@ -494,6 +513,8 @@ node scripts/smoke-packaged.mjs   # launches packaged app and sends a tiny promp
 - AskUserQuestion is not available inside subagents (Claude Code limitation).
 - Global shortcut may not register on Wayland.
 - PDF support depends on the configured model/gateway.
+- macOS packages are unsigned/unnotarized by default; CI publishes a single runner architecture, so
+  build from source if that architecture does not match the target Mac.
 - The app is ~640 MB unpacked because it bundles the Claude Code native binary.
 - Future work: cloud/API usage limits, proper i18n, auto-update feed, richer diff editor, more
   marketplace metadata, and an automated restore UI for backups.
