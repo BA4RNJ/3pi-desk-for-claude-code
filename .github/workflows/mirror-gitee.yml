@@ -1,0 +1,54 @@
+name: Mirror to Gitee
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+      - "wsl-v*"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitee
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    name: Sync main and tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push to Gitee
+        env:
+          GITEE_SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_PRIVATE_KEY }}
+          GITEE_REPO: ${{ vars.GITEE_REPO || 'git@gitee.com:BA4RNJ/3pi-desk-for-claude-code.git' }}
+        run: |
+          if [ -z "${GITEE_SSH_PRIVATE_KEY}" ]; then
+            echo "GITEE_SSH_PRIVATE_KEY is not configured; skipping mirror."
+            echo "See docs/GITEE-MIRROR.md for setup."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${GITEE_SSH_PRIVATE_KEY}" > ~/.ssh/gitee_mirror
+          chmod 600 ~/.ssh/gitee_mirror
+          ssh-keyscan -t ed25519 gitee.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/gitee_mirror -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          export GIT_TERMINAL_PROMPT=0
+
+          git remote add gitee "${GITEE_REPO}"
+          git push gitee HEAD:main
+          git push gitee --tags

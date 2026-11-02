@@ -46,6 +46,16 @@ Keywords: Claude Code GUI, Claude Code desktop app, Claude Code graphical interf
 third-party API, Claude Code DeepSeek, Claude Code Kimi, Claude Code GLM, Claude Code Ollama,
 Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
 
+## 镜像 / Mirrors
+
+- **GitHub（主仓库，含 Releases 安装包）**：
+  https://github.com/BA4RNJ/3pi-desk-for-claude-code
+- **Gitee（源码镜像）**：
+  https://gitee.com/BA4RNJ/3pi-desk-for-claude-code
+
+Gitee 镜像同步 `main` 和 Git tags；AppImage / deb / dmg 等安装包请从 GitHub Releases 下载。
+镜像配置和排错见 [`docs/GITEE-MIRROR.md`](docs/GITEE-MIRROR.md)。
+
 ---
 
 # 中文文档
