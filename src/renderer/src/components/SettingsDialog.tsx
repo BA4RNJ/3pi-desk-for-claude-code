@@ -411,7 +411,7 @@ export function SettingsDialog({
             <AppMark size={40} className="settings-mark" />
             <div>
               <h2>3PI Desk</h2>
-              <p>AI 编程工作台 · v0.4.0</p>
+              <p>AI 编程工作台 · v0.4.1</p>
             </div>
           </div>
           <nav className="settings-nav">

@@ -65,7 +65,7 @@ struct NativeTopBar: View {
         }.font(.system(size: scaled(10))).foregroundColor(Palette.coral).padding(.horizontal, 9)
           .padding(.vertical, 5).background(Palette.coral.opacity(0.1)).cornerRadius(12)
       }
-    }.padding(.horizontal, 24).frame(height: 56).overlay(alignment: .bottom) {
+    }.padding(.horizontal, 24).frame(height: 56).background(.bar).overlay(alignment: .bottom) {
       Rectangle().fill(Palette.border).frame(height: 1)
     }
   }

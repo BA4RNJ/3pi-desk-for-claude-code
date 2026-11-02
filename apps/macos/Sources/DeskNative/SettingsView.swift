@@ -24,7 +24,7 @@ struct NativeSettingsView: View {
           Mark(size: 40)
           VStack(alignment: .leading) {
             Text("3PI Desk").font(.system(size: scaled(17), weight: .semibold, design: .serif))
-            Text(interfaceText("AI coding workspace") + " · v0.4.1").font(.caption).foregroundColor(
+            Text(interfaceText("AI coding workspace") + " · v0.1.4.1").font(.caption).foregroundColor(
               Palette.muted)
           }
         }.padding(.horizontal, 6).padding(.bottom, 20)
@@ -420,6 +420,8 @@ struct NativeSettingsView: View {
       Mark(size: 64)
       Text("3PI Desk").font(.title)
       note("Local AI coding interface powered by Claude Agent SDK.")
+      Text("Powered by BA4RNJ · macOS rebuild and maintained by ELT Group")
+        .font(.caption).foregroundColor(Palette.muted)
       ForEach(
         [
           ("Application version", "app"), ("Agent SDK", "sdk"), ("Built-in engine", "claudeCode"),

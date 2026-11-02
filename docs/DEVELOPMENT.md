@@ -22,7 +22,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
   `claude-desk` so that existing app preferences (`~/.config/claude-desk/`) and user data are
   preserved.
 
-## 2. Stack and versions (v0.4.0)
+## 2. Stack and versions (Electron 0.4.1 / Native 0.1.4.1)
 
 - Electron 45.2.1 (Node 24.22.x inside Electron).
 - React 19, TypeScript, Vite 8, electron-vite 6.
@@ -178,7 +178,7 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   - `canUseTool` -> permission/question/plan flow
   - `additionalDirectories`, `allowedTools`, `disallowedTools`, `maxBudgetUsd`
   - `extraArgs` for IDE/Chrome flags
-  - `env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.0' }`, plus
+  - `env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.1' }`, plus
     `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from `findModelContextWindow()` in `main/models.ts`.
     Claude Code defaults to 200k for model IDs it does not recognize; the gateway catalog's
     per-model `limit.context` must be passed so DeepSeek (1M) and other gateway models use their

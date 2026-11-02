@@ -15,13 +15,13 @@ enum Palette {
             blue: Double(value & 255) / 255, alpha: 1)
         }))
   }
-  static let background = adaptive(0xf4f1e8, 0x1b1a18), sidebar = adaptive(0xece8dd, 0x151412),
-    panel = adaptive(0xfffdf8, 0x262522)
+  static let background = adaptive(0xf5f5f7, 0x1c1c1e), sidebar = adaptive(0xf6f6f8, 0x1c1c1e),
+    panel = adaptive(0xffffff, 0x2c2c2e)
   static let ink = adaptive(0x1f1e1d, 0xf1eee5), secondary = adaptive(0x585650, 0xb5b0a4),
     muted = adaptive(0x918c80, 0x8a8478)
-  static let border = adaptive(0xe1dbcd, 0x35332e)
-  static let userBubble = adaptive(0xe7e1d2, 0x2f2c27)
-  static let coralSoft = adaptive(0xf3e1d8, 0x3a2a23)
+  static let border = adaptive(0xd1d1d6, 0x48484a)
+  static let userBubble = adaptive(0xe5e5ea, 0x3a3a3c)
+  static let coralSoft = adaptive(0xffe5dd, 0x4a2d24)
   static let coralStrong = adaptive(0xbf5f3e, 0xee9a78)
   @MainActor static var coral: Color {
     switch NativeAppearance.shared.accent {
@@ -43,7 +43,7 @@ extension Color {
 struct Outline: ViewModifier {
   var radius: CGFloat = 10
   func body(content: Content) -> some View {
-    content.background(Palette.panel).clipShape(RoundedRectangle(cornerRadius: radius)).overlay(
+    content.background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: radius)).overlay(
       RoundedRectangle(cornerRadius: radius).stroke(Palette.border, lineWidth: 1))
   }
 }
@@ -100,7 +100,7 @@ struct WorkspaceView: View {
         NativeFilePanel(store: navigation, model: workspace.tabs[workspace.selected].model)
       }
     }
-    .background(Palette.background).foregroundColor(Palette.ink).tint(Palette.coral).font(
+    .background(.regularMaterial).foregroundColor(Palette.ink).tint(Palette.coral).font(
       .system(size: scaled(13))
     )
     .frame(minWidth: 940, minHeight: 640).preferredColorScheme(appearance.scheme)

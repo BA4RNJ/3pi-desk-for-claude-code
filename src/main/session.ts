@@ -226,7 +226,7 @@ export class SessionManager {
       abortController: abort,
       env: {
         ...process.env,
-        CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.0',
+        CLAUDE_AGENT_SDK_CLIENT_APP: '3pi-desk/0.4.1',
         ...(options.contextWindow && options.contextWindow > 0
           ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(options.contextWindow) }
           : {})

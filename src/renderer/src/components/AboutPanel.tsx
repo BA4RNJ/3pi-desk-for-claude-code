@@ -43,6 +43,7 @@ export function AboutPanel() {
       <div>
         <h4>3PI Desk</h4>
         <p>本地 AI 编程图形界面，基于 Agent SDK 运行。</p>
+        <p>Powered by BA4RNJ · macOS rebuild and maintained by ELT Group</p>
       </div>
 
       <div className="settings-rows">

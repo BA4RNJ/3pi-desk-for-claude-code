@@ -1,9 +1,9 @@
 # macOS ARM64 native frontend
 
-The native migration is on `codex/macos-native`. Electron remains the supported Linux/WSL
-implementation. SwiftUI/AppKit replaces the macOS frontend; the local Node bridge reuses existing
-TypeScript business services and Claude Agent SDK. This is an experimental, unsigned and
-unnotarized Release preview. It is not yet certified equivalent to Electron.
+The Native SwiftUI channel is maintained alongside Electron. SwiftUI/AppKit provides the macOS
+frontend while the local Node bridge reuses existing TypeScript business services and Claude Agent
+SDK. Its numeric version line is `0.1.<electron-minor>.<native-patch>`; the current Native
+version is `0.1.4.1` alongside Electron `0.4.1`.
 
 See [MACOS-UI-PARITY.md](MACOS-UI-PARITY.md) for the source-to-native interface inventory, remaining
 differences and validation boundaries. The target layout follows the original frontend rather

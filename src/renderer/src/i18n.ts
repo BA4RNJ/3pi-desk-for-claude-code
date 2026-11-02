@@ -459,7 +459,7 @@ Object.assign(DICTIONARY, {
 
 Object.assign(DICTIONARY, {
   'AI 编程工作台': 'AI coding workspace',
-  'AI 编程工作台 · v0.4.0': 'AI coding workspace · v0.4.0',
+  'AI 编程工作台 · v0.4.1': 'AI coding workspace · v0.4.1',
   '供应商': 'Provider',
   '自定义供应商': 'Custom provider',
   '多模型网关，兼容 Anthropic Messages API':
