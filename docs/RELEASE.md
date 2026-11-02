@@ -41,7 +41,7 @@ In **Settings → Branches** (or Rulesets):
    ```
 
 4. Verify the packages launch from a clean environment:
-   - AppImage: `chmod +x 3pi-desk-*.AppImage && ./3pi-desk-*.AppImage`
+   - AppImage: `chmod +x 3pi-desk-*-linux-*.AppImage && ./3pi-desk-*-linux-*.AppImage`
    - deb: install into a disposable VM/container.
    - macOS dmg: open it, drag the app to Applications, right-click → Open (unsigned build), and
      send one prompt.

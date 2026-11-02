@@ -39,7 +39,7 @@ linux:
   icon: build/icon.png
   executableName: 3pi-desk
   syncDesktopName: true
-  artifactName: 3pi-desk-${version}-${arch}.${ext}
+  artifactName: 3pi-desk-${version}-linux-${arch}.${ext}
   maintainer: BA4RNJ <BA4RNJ@users.noreply.github.com>
   vendor: BA4RNJ
   synopsis: 3PI Desk for Claude Code
@@ -50,7 +50,7 @@ mac:
     - zip
   category: public.app-category.developer-tools
   icon: build/icon.png
-  artifactName: 3pi-desk-${version}-${arch}.${ext}
+  artifactName: 3pi-desk-${version}-macos-${arch}.${ext}
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist

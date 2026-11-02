@@ -57,11 +57,11 @@ xeyes
 
 ## 安装打包版（推荐）
 
-从 Releases 下载 WSL 版的 deb（文件名形如 `3pi-desk-wsl-<版本>-amd64.deb`）：
+从 Releases 下载 WSL 版的 deb（文件名形如 `3pi-desk-<版本>-wsl-amd64.deb`）：
 
 ```bash
 sudo apt update
-sudo apt install -y ./3pi-desk-wsl-*.deb
+sudo apt install -y ./3pi-desk-*-wsl-*.deb
 3pi-desk-wsl
 ```
 
@@ -80,14 +80,14 @@ sudo apt install -y libfuse2t64
 # Ubuntu 22.04
 sudo apt install -y libfuse2
 
-chmod +x 3pi-desk-wsl-*.AppImage
-./3pi-desk-wsl-*.AppImage
+chmod +x 3pi-desk-*-wsl-*.AppImage
+./3pi-desk-*-wsl-*.AppImage
 ```
 
 如果 AppImage 仍无法启动，可以用解包模式：
 
 ```bash
-./3pi-desk-wsl-*.AppImage --appimage-extract-and-run
+./3pi-desk-*-wsl-*.AppImage --appimage-extract-and-run
 ```
 
 ## 从源码构建

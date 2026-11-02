@@ -19,7 +19,7 @@ directories:
 
 linux:
   executableName: 3pi-desk-wsl
-  artifactName: 3pi-desk-wsl-${version}-${arch}.${ext}
+  artifactName: 3pi-desk-${version}-wsl-${arch}.${ext}
   synopsis: 3PI Desk for Claude Code (WSL2 edition)
   description: 3PI Desk for Claude Code, packaged for WSL2 + WSLg.
 

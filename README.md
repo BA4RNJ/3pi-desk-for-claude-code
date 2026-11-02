@@ -89,12 +89,12 @@
 
 从 [Releases](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases) 下载：
 
-- **AppImage**：`chmod +x 3pi-desk-*.AppImage` 后直接运行。
-- **deb**：`sudo apt install ./3pi-desk-*.deb`。
-- **macOS**：下载 `3pi-desk-*.dmg`（当前 CI 产物未签名，文件名包含架构）。如果产物架构与你的
-  Mac 不匹配，请从源码构建，见下文。
-- 每个版本附带 `SHA256SUMS`（macOS 为 `SHA256SUMS-macos`）、`LICENSE` 和
-  `THIRD_PARTY_NOTICES.md`。
+- **Linux AppImage**：`chmod +x 3pi-desk-*-linux-*.AppImage` 后直接运行。
+- **Linux deb**：`sudo apt install ./3pi-desk-*-linux-*.deb`。
+- **macOS**：下载 `3pi-desk-*-macos-*.dmg`（当前 CI 产物未签名，文件名包含架构）。如果产物
+  架构与你的 Mac 不匹配，请从源码构建，见下文。
+- 每个版本附带 `SHA256SUMS`（macOS 为 `SHA256SUMS-macos`，WSL 为 `SHA256SUMS-wsl`）、
+  `LICENSE` 和 `THIRD_PARTY_NOTICES.md`。
 
 发布包内包含 Anthropic 的 Claude Code CLI；再分发和使用该二进制需遵守 Anthropic 的条款。
 
@@ -102,8 +102,8 @@
 
 在 Windows 上通过 WSLg 使用时，请下载带 `wsl` 字样的产物：
 
-- **deb**：`sudo apt install ./3pi-desk-wsl-*.deb`，然后运行 `3pi-desk-wsl`。
-- **AppImage**：`chmod +x 3pi-desk-wsl-*.AppImage` 后运行；WSL 中通常需要 `libfuse2t64`。
+- **deb**：`sudo apt install ./3pi-desk-*-wsl-*.deb`，然后运行 `3pi-desk-wsl`。
+- **AppImage**：`chmod +x 3pi-desk-*-wsl-*.AppImage` 后运行；WSL 中通常需要 `libfuse2t64`。
 
 WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包名和桌面入口，可以并存。它会自动
 关闭系统托盘和全局快捷键，并优先通过 Windows 默认浏览器/应用打开链接和文件。完整说明、
@@ -401,12 +401,13 @@ Settings → API:
 Download Linux and macOS packages from
 [Releases](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases):
 
-- **AppImage**: `chmod +x 3pi-desk-*.AppImage` and run it.
-- **deb**: `sudo apt install ./3pi-desk-*.deb`.
-- **macOS**: download `3pi-desk-*.dmg` (current CI artifacts are unsigned; the filename includes
-  the architecture). If the architecture does not match your Mac, build from source; see below.
-- Each release includes `SHA256SUMS` (or `SHA256SUMS-macos`), `LICENSE`, and
-  `THIRD_PARTY_NOTICES.md`.
+- **Linux AppImage**: `chmod +x 3pi-desk-*-linux-*.AppImage` and run it.
+- **Linux deb**: `sudo apt install ./3pi-desk-*-linux-*.deb`.
+- **macOS**: download `3pi-desk-*-macos-*.dmg` (current CI artifacts are unsigned; the filename
+  includes the architecture). If the architecture does not match your Mac, build from source; see
+  below.
+- Each release includes `SHA256SUMS` (macOS uses `SHA256SUMS-macos`, WSL uses `SHA256SUMS-wsl`),
+  `LICENSE`, and `THIRD_PARTY_NOTICES.md`.
 
 Release packages include Anthropic's Claude Code CLI; redistributing and using that binary is
 subject to Anthropic's terms.
@@ -415,8 +416,8 @@ subject to Anthropic's terms.
 
 On Windows, use the artifacts with the `wsl` suffix:
 
-- **deb**: `sudo apt install ./3pi-desk-wsl-*.deb`, then run `3pi-desk-wsl`.
-- **AppImage**: `chmod +x 3pi-desk-wsl-*.AppImage` and run it; WSL usually needs `libfuse2t64`.
+- **deb**: `sudo apt install ./3pi-desk-*-wsl-*.deb`, then run `3pi-desk-wsl`.
+- **AppImage**: `chmod +x 3pi-desk-*-wsl-*.AppImage` and run it; WSL usually needs `libfuse2t64`.
 
 The WSL edition shares the source with the Linux edition but uses a separate executable, deb
 package name, and desktop entry, so both can be installed side by side. It automatically disables
