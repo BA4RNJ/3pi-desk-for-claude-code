@@ -24,7 +24,9 @@
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
+    "prepackage": "node node_modules/electron/install.js",
     "package": "npm run build && electron-builder --linux dir",
+    "predist": "node node_modules/electron/install.js",
     "dist": "npm run build && electron-builder --linux AppImage deb"
   },
   "dependencies": {

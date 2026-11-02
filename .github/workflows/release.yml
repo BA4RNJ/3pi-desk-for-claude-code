@@ -33,6 +33,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Ensure native binaries
+        run: |
+          # npm may skip lifecycle scripts on hardened CI runners; electronDist
+          # in electron-builder.yml requires this directory to exist.
+          node node_modules/electron/install.js
+          test -x node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude
+
       - name: Verify tag matches package version
         run: |
           VERSION="$(node -p "require('./package.json').version")"
