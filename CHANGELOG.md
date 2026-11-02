@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.1] - 2026-11-02
 
 ### Added
 
@@ -16,16 +16,6 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files through the Windows default browser/application.
 - CJK and emoji font recommendations for the WSL deb.
 - Single-instance handling, so launching the app again focuses the existing window.
-
-### Fixed
-
-- Closing the window with "close to tray" enabled no longer leaves a hidden, unreachable process
-  when no system tray is available (WSLg, or a GNOME session without a tray extension).
-
-## [Unreleased]
-
-### Added
-
 - macOS support: dmg/zip electron-builder targets, hardened-runtime entitlements, a monochrome
   template tray icon, a native application menu with standard Cmd shortcuts, Dock integration, and
   `package:mac` / `dist:mac` scripts. CI verifies the macOS build; the release workflow publishes
@@ -39,6 +29,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Closing the window with "close to tray" enabled no longer leaves a hidden, unreachable process
+  when no system tray is available (WSLg, or a GNOME session without a tray extension).
 - macOS: Cmd+C/V/A/Q no longer stop working, closing the last window keeps the app alive for the
   Dock/tray, and the menu-bar icon uses a correctly sized template image.
 

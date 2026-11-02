@@ -1,6 +1,6 @@
 {
   "name": "claude-desk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "3PI Desk for Claude Code - a local GUI for Claude Code",
   "main": "./out/main/index.js",
   "author": "BA4RNJ",
