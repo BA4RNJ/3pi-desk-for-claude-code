@@ -5,11 +5,12 @@
 [![Platform: Linux / macOS / WSL2](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey.svg)](#系统要求)
 [![Release](https://img.shields.io/github/v/release/BA4RNJ/3pi-desk-for-claude-code)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases)
 
-> **Claude Code 图形化界面 / Claude Code GUI / Claude Code 桌面客户端** — 支持第三方
-> Anthropic 兼容 API（DeepSeek、Kimi、GLM、MiniMax、Ollama、OpenCode Go 等），覆盖 Linux、
-> Windows WSL2/WSLg 与 macOS，无需从终端操作 Claude Code。
+## Claude Code 图形化界面 / GUI 桌面客户端
 
-## 中文简介
+> 支持第三方 Anthropic 兼容 API（DeepSeek、Kimi、GLM、MiniMax、Ollama、OpenCode Go 等），
+> 覆盖 Linux、Windows WSL2/WSLg 与 macOS，无需从终端操作 Claude Code。
+
+### 中文简介
 
 **3PI Desk for Claude Code** 是一个面向中文用户的 **Claude Code 图形化界面（GUI）**，也可以理解为
 Claude Code 的桌面客户端。它让你继续使用 Claude Code 的工作区、工具、权限、插件和会话体系，
@@ -25,11 +26,14 @@ MiniMax、Ollama 本地模型以及其他自定义网关。
 - **中文文档 / 中文界面**：README、安装教程、WSL 指南均为中文优先，界面可切换中文。
 - **对话可编辑 / 撤回**：发送后的用户消息可在输入框原地修改，或确认后撤回，不新开分支。
 
-常见搜索：Claude Code 图形化界面、Claude Code GUI、Claude Code 桌面客户端、Claude Code 中文版、
-Claude Code 第三方 API、Claude Code DeepSeek、Claude Code Kimi、Claude Code GLM、Claude Code
-Ollama、Claude Code WSL2、Claude Code macOS、Claude Code 插件市场、Claude Code 多标签。
+### 常见搜索关键词
 
-## Introduction (English)
+Claude Code 图形化界面、Claude Code GUI、Claude Code 桌面客户端、Claude Code 中文版、Claude Code
+中文界面、Claude Code 第三方 API、Claude Code 免安装 CLI、Claude Code DeepSeek、Claude Code
+Kimi、Claude Code GLM、Claude Code Ollama、Claude Code WSL2、Claude Code WSLg、Claude Code
+macOS、Claude Code 插件市场、Claude Code 多标签、Claude Code 非官方客户端。
+
+### Introduction (English)
 
 **3PI Desk for Claude Code** is a local **desktop GUI for Claude Code** that keeps the Claude Code
 workflow while letting you point it at any **Anthropic-Messages-compatible API provider** (DeepSeek,
