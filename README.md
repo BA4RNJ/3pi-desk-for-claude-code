@@ -2,12 +2,45 @@
 
 [![CI](https://github.com/BA4RNJ/3pi-desk-for-claude-code/actions/workflows/ci.yml/badge.svg)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform: Linux / macOS](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg)](#系统要求)
+[![Platform: Linux / macOS / WSL2](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey.svg)](#系统要求)
 [![Release](https://img.shields.io/github/v/release/BA4RNJ/3pi-desk-for-claude-code)](https://github.com/BA4RNJ/3pi-desk-for-claude-code/releases)
 
-一个本地 Electron 图形界面，让你在**使用第三方 Anthropic 兼容 API 的同时，继续使用 Claude Code
-的完整框架**。底层由官方 Claude Agent SDK 调用随应用打包的 Claude Code CLI；面板负责界面、配置和
-会话管理，不重写 Agent 循环。
+> **Claude Code 图形化界面 / Claude Code GUI / Claude Code 桌面客户端** — 支持第三方
+> Anthropic 兼容 API（DeepSeek、Kimi、GLM、MiniMax、Ollama、OpenCode Go 等），覆盖 Linux、
+> Windows WSL2/WSLg 与 macOS，无需从终端操作 Claude Code。
+
+## 中文简介
+
+**3PI Desk for Claude Code** 是一个面向中文用户的 **Claude Code 图形化界面（GUI）**，也可以理解为
+Claude Code 的桌面客户端。它让你继续使用 Claude Code 的工作区、工具、权限、插件和会话体系，
+同时把模型指向任意 **Anthropic Messages 兼容 API**：DeepSeek、Kimi（Moonshot）、GLM（Z.ai）、
+MiniMax、Ollama 本地模型以及其他自定义网关。
+
+- **不用记忆 CLI 命令**：工作区、标签页、文件面板、斜杠命令、权限确认都在图形界面完成。
+- **不用手动改环境变量**：设置 → API 会写入 `~/.claude/settings.json`，并自动选择
+  `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`。
+- **不用单独安装 Claude Code**：发布包内置官方 SDK 与 Claude Code CLI；也可以复用你现有的
+  CLI 配置和聊天记录。
+- **多平台**：Linux、Windows WSL2/WSLg、macOS（Apple Silicon；Intel 可从源码构建）。
+- **中文文档 / 中文界面**：README、安装教程、WSL 指南均为中文优先，界面可切换中文。
+- **对话可编辑 / 撤回**：发送后的用户消息可在输入框原地修改，或确认后撤回，不新开分支。
+
+常见搜索：Claude Code 图形化界面、Claude Code GUI、Claude Code 桌面客户端、Claude Code 中文版、
+Claude Code 第三方 API、Claude Code DeepSeek、Claude Code Kimi、Claude Code GLM、Claude Code
+Ollama、Claude Code WSL2、Claude Code macOS、Claude Code 插件市场、Claude Code 多标签。
+
+## Introduction (English)
+
+**3PI Desk for Claude Code** is a local **desktop GUI for Claude Code** that keeps the Claude Code
+workflow while letting you point it at any **Anthropic-Messages-compatible API provider** (DeepSeek,
+Kimi/Moonshot, GLM/Z.ai, MiniMax, Ollama, OpenCode Go, or a custom gateway). It runs on Linux,
+Windows WSL2/WSLg, and macOS. The packaged app bundles the official Claude Code CLI, so no separate
+CLI install is required. The UI is English by default with a 中文 toggle; the documentation is
+Chinese-first with a full English section below.
+
+Keywords: Claude Code GUI, Claude Code desktop app, Claude Code graphical interface, Claude Code
+third-party API, Claude Code DeepSeek, Claude Code Kimi, Claude Code GLM, Claude Code Ollama,
+Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
 
 ---
 

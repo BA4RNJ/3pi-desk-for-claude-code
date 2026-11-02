@@ -18,6 +18,28 @@
     "url": "https://github.com/BA4RNJ/3pi-desk-for-claude-code/issues"
   },
   "homepage": "https://github.com/BA4RNJ/3pi-desk-for-claude-code#readme",
+  "keywords": [
+    "claude-code",
+    "claude-code-gui",
+    "claude-code-desktop",
+    "claude-code-chinese",
+    "claude-code-graphical",
+    "anthropic-compatible",
+    "deepseek",
+    "kimi",
+    "moonshot",
+    "glm",
+    "zai",
+    "minimax",
+    "ollama",
+    "wsl",
+    "wslg",
+    "macos",
+    "electron",
+    "react",
+    "typescript",
+    "desktop-app"
+  ],
   "scripts": {
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
