@@ -7,14 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to build and attach assets to (e.g. v0.4.2)"
+        description: "Existing tag to build and attach assets to (e.g. v0.4.3)"
         required: true
         type: string
-      build_macos:
-        description: "Build macOS dmg/zip (leave off until the macOS work is ready)"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
@@ -28,28 +23,24 @@ jobs:
     name: Classify release tag
     runs-on: ubuntu-latest
     outputs:
-      channel: ${{ steps.classify.outputs.channel }}
+      release: ${{ steps.classify.outputs.release }}
     steps:
       - name: Classify
         id: classify
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "channel=electron" >> "$GITHUB_OUTPUT"
-            echo "Electron release tag: $TAG"
-          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "channel=native" >> "$GITHUB_OUTPUT"
-            echo "Native macOS tag: $TAG (this workflow only builds Electron packages)"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "Release tag: $TAG"
           else
-            echo "channel=unknown" >> "$GITHUB_OUTPUT"
-            echo "::error::Unrecognized release tag: $TAG"
-            exit 1
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::${TAG} is not a three-part release tag; skipping."
           fi
 
   linux:
     name: Build Linux packages
     needs: classify
-    if: needs.classify.outputs.channel == 'electron'
+    if: needs.classify.outputs.release == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
@@ -103,8 +94,8 @@ jobs:
       - name: Generate checksums
         run: |
           cd release
-          sha256sum *.AppImage *.deb > SHA256SUMS
-          cat SHA256SUMS
+          sha256sum *.AppImage *.deb > SHA256SUMS-linux
+          cat SHA256SUMS-linux
           ls -lh *.AppImage *.deb
 
       - name: Create or update draft release
@@ -115,7 +106,7 @@ jobs:
             gh release upload "${RELEASE_TAG}" \
               release/*.AppImage \
               release/*.deb \
-              release/SHA256SUMS \
+              release/SHA256SUMS-linux \
               LICENSE \
               THIRD_PARTY_NOTICES.md \
               --clobber
@@ -123,7 +114,7 @@ jobs:
             gh release create "${RELEASE_TAG}" \
               release/*.AppImage \
               release/*.deb \
-              release/SHA256SUMS \
+              release/SHA256SUMS-linux \
               LICENSE \
               THIRD_PARTY_NOTICES.md \
               --draft \
@@ -131,10 +122,9 @@ jobs:
               --title "3PI Desk for Claude Code ${RELEASE_TAG}"
           fi
 
-  macos:
-    name: Build macOS packages
+  macos-native:
+    name: Build native macOS app
     needs: linux
-    if: ${{ inputs.build_macos || vars.BUILD_MACOS == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -146,6 +136,11 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
+
+      - name: Validate native build environment
+        run: |
+          test "$(uname -m)" = "arm64"
+          test -f scripts/native/package-standalone.sh
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -167,29 +162,32 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Build application
-        run: npx electron-vite build
+      - name: Swift transcript check
+        run: scripts/native/test-transcript.sh
 
-      - name: Package dmg and zip (unsigned)
-        run: npx electron-builder --mac dmg zip --publish never
+      - name: Package native app
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DESK_NATIVE_VERSION: ${{ env.RELEASE_TAG }}
+        run: scripts/native/package-standalone.sh
 
-      - name: Generate checksums
+      - name: Archive app and checksum
         run: |
-          cd release
-          shasum -a 256 *.dmg *.zip > SHA256SUMS-macos
+          VERSION="${RELEASE_TAG#v}"
+          cd release/native-arm64
+          ditto -c -k --sequesterRsrc --keepParent \
+            "3PI Desk Native.app" \
+            "../3pi-desk-${VERSION}-macos-arm64.zip"
+          cd ..
+          shasum -a 256 "3pi-desk-${VERSION}-macos-arm64.zip" > SHA256SUMS-macos
           cat SHA256SUMS-macos
-          ls -lh *.dmg *.zip
+          ls -lh "3pi-desk-${VERSION}-macos-arm64.zip"
 
       - name: Upload macOS artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${RELEASE_TAG}" \
-            release/*.dmg \
-            release/*.zip \
+            release/*macos*.zip \
             release/SHA256SUMS-macos \
             --clobber
 

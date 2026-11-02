@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-11-03
+
+### Changed
+
+- Unified the version line: Electron (Linux/WSL) and the native macOS SwiftUI build now share one
+  three-part version and one GitHub Release. macOS ships as
+  `3pi-desk-<version>-macos-arm64.zip`; Linux and WSL keep `linux` / `wsl` in their filenames.
+- `release.yml` now builds Linux, WSL, and the native macOS app in one workflow and attaches
+  `SHA256SUMS-linux`, `SHA256SUMS-wsl`, and `SHA256SUMS-macos` to the same draft release. The
+  separate four-part native tag workflow was removed.
+- The native app's `Info.plist` and bridge version are derived from the release tag.
+- macOS Electron verification in `ci.yml` is opt-in via `ENABLE_MACOS_CI`, and main-branch pushes
+  no longer cancel each other.
+- Removed the paused Gitee mirror from user-facing documentation; its workflow is manual-only.
+
 ## [0.4.2] - 2026-11-03
 
 ### Added

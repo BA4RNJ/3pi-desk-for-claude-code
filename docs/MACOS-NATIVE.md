@@ -2,8 +2,8 @@
 
 The Native SwiftUI channel is maintained alongside Electron. SwiftUI/AppKit provides the macOS
 frontend while the local Node bridge reuses existing TypeScript business services and Claude Agent
-SDK. Its numeric version line is `0.1.<electron-minor>.<native-patch>`; the current Native
-version is `0.1.4.1` alongside Electron `0.4.2`.
+SDK. It shares the Electron version and GitHub Release (currently `0.4.3`); macOS assets use the
+`3pi-desk-<version>-macos-arm64.zip` filename.
 
 See [MACOS-UI-PARITY.md](MACOS-UI-PARITY.md) for the source-to-native interface inventory, remaining
 differences and validation boundaries. The target layout follows the original frontend rather

@@ -58,22 +58,14 @@ Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
 
 ## 项目状态与声明
 
-当前提供 Electron 与 macOS SwiftUI 两条发布通道，功能基线和用户数据格式保持一致；两条通道可以按各自节奏发布。
+当前提供 Electron 与 macOS SwiftUI 两条界面通道，但它们使用**同一个版本号、同一个 GitHub Release**：
 
-### 双通道版本规则
+- Linux、WSL2/WSLg 使用 Electron 包；
+- macOS 使用原生 SwiftUI 包；
+- 三平台资产都发布在同一个 release 中，文件名用 `linux` / `wsl` / `macos` 区分；
+- 应用数据目录、Claude 配置和聊天记录保持兼容。
 
-版本号使用三段 Electron 版本与四段 Native 版本并行：
-
-| 通道 | 当前版本 | 适用平台 | 发布节奏 | 版本示例 |
-| --- | --- | --- | --- | --- |
-| Electron | `0.4.2` | Linux、WSL2/WSLg、macOS | 跨平台功能与 SDK 更新 | `0.4.3` |
-| Native SwiftUI | `0.1.4.1` | macOS | macOS 原生体验与系统 API 更新 | `0.1.4.2` |
-
-规则为：Electron `主版本.功能版本.修订版本`；Native
-`主版本.原生通道.对应 Electron 功能版本.Native 修订版本`。因此 `0.4.2` 对应
-`0.1.4.1`：第二段的 `1` 固定代表 Native SwiftUI，第三段 `4` 对齐 Electron 的功能版本，
-第四段只记录 Native 自身修订。两条线可以独立发布，且版本始终是纯数字、可直接排序。
-应用数据目录、Claude 配置和聊天记录仍保持兼容，便于按需切换客户端。
+当前版本：`0.4.3`。
 
 
 - **为什么做这个项目。** 它面向希望继续使用 Claude Code 工作流、但把模型指向**第三方
@@ -187,7 +179,7 @@ WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包�
 
 - **Linux**：默认 deb/AppImage 不包含 CLI；离线包 `npm run dist:linux:offline` 会把它放在
   `resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`。
-- **macOS**：Electron 版同上；原生 SwiftUI 版（`v0.1.4.1`）自带 Node、SDK 和 ARM64 CLI。
+- **macOS**：Electron 版同上；原生 SwiftUI 版（同一 release 的 `3pi-desk-0.4.3-macos-arm64.zip`）自带 Node、SDK 和 ARM64 CLI。
 - **源码版**：`npm install` 会安装当前平台的 CLI 包（约 314 MB），开发时直接使用它。
 
 如果你**已经安装过 Claude Code**，应用会优先复用它（通过 `PATH` 或官方安装器路径），并共享
@@ -510,8 +502,8 @@ If none is found, Settings and the main window offer a ~146 MB download or a fil
 
 - **Linux:** the default deb/AppImage does not include the CLI; `npm run dist:linux:offline`
   builds a package that puts it under `resources/app.asar.unpacked/...`.
-- **macOS:** the Electron build follows the same rules; the native SwiftUI build (`v0.1.4.1`)
-  bundles Node, the SDK, and the ARM64 CLI.
+- **macOS:** the Electron build follows the same rules; the native SwiftUI build
+  (`3pi-desk-0.4.3-macos-arm64.zip` in the same release) bundles Node, the SDK, and the ARM64 CLI.
 - **From source:** `npm install` pulls the current platform CLI package (~314 MB) for development.
 
 If you **already have Claude Code installed**, the app prefers it and shares the same

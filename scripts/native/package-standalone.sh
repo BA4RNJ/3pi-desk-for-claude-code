@@ -2,7 +2,7 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
-VERSION="${DESK_NATIVE_VERSION:-0.1.4.1}"
+VERSION="${DESK_NATIVE_VERSION:-0.4.3}"
 VERSION="${VERSION#v}"
 APP="$ROOT/release/native-arm64/3PI Desk Native.app"
 if pgrep -f "$APP/Contents/MacOS/DeskNative" >/dev/null 2>&1; then

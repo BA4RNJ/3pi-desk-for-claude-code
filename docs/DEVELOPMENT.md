@@ -23,7 +23,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
   `claude-desk` so that existing app preferences (`~/.config/claude-desk/`) and user data are
   preserved.
 
-## 2. Stack and versions (Electron 0.4.2 / Native 0.1.4.1)
+## 2. Stack and versions (0.4.3 — Electron + Native)
 
 - Electron 45.2.1 (Node 24.22.x inside Electron).
 - React 19, TypeScript, Vite 8, electron-vite 6.
@@ -546,7 +546,8 @@ node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary
 - macOS Electron verification in `ci.yml` is skipped by default. Set the repository variable
   `ENABLE_MACOS_CI=true` to run it. macOS arm64 runners are capacity-constrained, and a job that
   waits too long can be canceled and mark the whole run red (which also sends failure
-  notifications). Native macOS releases use `release-native.yml` and are unaffected.
+  notifications). Native macOS builds run in the `macos-native` job of `release.yml` and are
+  unaffected.
 - The default package is ~275 MB unpacked; it resolves the Claude Code CLI at runtime. The
   offline build (`electron-builder.offline.yml`) bundles the CLI and is ~640 MB.
 - Future work: cloud/API usage limits, proper i18n, auto-update feed, richer diff editor, more

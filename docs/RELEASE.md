@@ -66,44 +66,31 @@ In **Settings → Branches** (or Rulesets):
 
 ## Tag and publish
 
-The Electron release workflow builds Linux AppImage/deb and the WSL2 AppImage/deb, and can build
-a macOS dmg/zip when enabled. It generates `SHA256SUMS` / `SHA256SUMS-wsl` (plus
-`SHA256SUMS-macos` when macOS is built) and creates a **draft** GitHub Release. macOS artifacts
-are unsigned and unnotarized unless Apple signing secrets are added to the repository; their
-filename includes the runner architecture.
+The release workflow builds **one GitHub Release containing all three platforms**:
 
-macOS Electron building is **opt-in** while the macOS work is in progress. Normal `v*` tag pushes
-skip the macOS job. To build it for a specific tag, run the workflow manually with `build_macos`
-enabled:
+- Linux AppImage/deb (`3pi-desk-<version>-linux-...`);
+- WSL2 AppImage/deb (`3pi-desk-<version>-wsl-...`);
+- macOS ARM64 native SwiftUI app (`3pi-desk-<version>-macos-arm64.zip`), built with
+  `scripts/native/package-standalone.sh` on an Apple Silicon runner.
 
-```bash
-gh workflow run release.yml -f tag=v0.4.2 -f build_macos=true
-```
+It generates `SHA256SUMS-linux`, `SHA256SUMS-wsl`, and `SHA256SUMS-macos`, then creates a
+**draft** release. macOS artifacts are unsigned and unnotarized unless Apple signing secrets are
+added; on first launch use right-click → Open.
 
-Set the repository variable `BUILD_MACOS=true` to re-enable macOS builds for tag pushes. The
-manual dispatch also works for Linux/WSL-only rebuilds (`-f build_macos=false`).
-
-Electron releases use a three-part tag:
+All channels share one three-part version and one tag:
 
 ```bash
-git tag -a v0.4.2 -m "3PI Desk for Claude Code v0.4.2"
-git push origin v0.4.2
+git tag -a v0.4.3 -m "3PI Desk for Claude Code v0.4.3"
+git push origin v0.4.3
 ```
 
-Native macOS releases use a numeric four-part tag, for example `v0.1.4.1`, and are built from
-`apps/macos` with `scripts/native/package-standalone.sh` on Apple Silicon. They are a separate
-channel; the Electron release workflow only accepts the three-part Electron version. The
-`wsl-v*` workflow remains available for an optional WSL-only release, but normal Electron `v*`
-releases include the WSL2 packages alongside Linux.
-
-Pushing a four-part tag runs `release-native.yml` on an Apple Silicon GitHub runner. It builds the
-SwiftUI app, bundles Node, the SDK, and the ARM64 CLI, then attaches a zipped `.app` and
-`SHA256SUMS-native` to a draft release. Native builds are unsigned; on first launch use
-right-click → Open. To rebuild without moving the tag:
+To rebuild an existing tag without moving it:
 
 ```bash
-gh workflow run release-native.yml -f tag=v0.1.4.1
+gh workflow run release.yml -f tag=v0.4.3
 ```
+
+Four-part tags are not release tags; the workflow warns and skips them.
 
 Then:
 

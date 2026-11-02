@@ -24,6 +24,6 @@ script = '#!/bin/sh\nexport DESK_NATIVE_NODE=' + shlex.quote(node) + '\nexport D
 with open(app + '/Contents/MacOS/launch', 'w') as f: f.write(script)
 os.chmod(app + '/Contents/MacOS/launch', 0o755)
 with open(app + '/Contents/Info.plist', 'wb') as f:
-    plistlib.dump({'CFBundleName':'3PI Desk Native Preview', 'CFBundleDisplayName':'3PI Desk Native Preview', 'CFBundleIdentifier':'local.3pidesk.native-preview', 'CFBundleExecutable':'launch', 'CFBundlePackageType':'APPL', 'CFBundleShortVersionString':'0.1.0', 'NSHighResolutionCapable':True, 'LSMinimumSystemVersion':'13.0'}, f)
+    plistlib.dump({'CFBundleName':'3PI Desk Native Preview', 'CFBundleDisplayName':'3PI Desk Native Preview', 'CFBundleIdentifier':'local.3pidesk.native-preview', 'CFBundleExecutable':'launch', 'CFBundlePackageType':'APPL', 'CFBundleShortVersionString':'0.4.3', 'NSHighResolutionCapable':True, 'LSMinimumSystemVersion':'13.0'}, f)
 PY
 printf 'Local preview: %s\n' "$APP"
