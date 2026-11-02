@@ -48,7 +48,8 @@ import { versionInfo } from './version'
 import {
   downloadClaudeCli,
   getClaudeCliStatus,
-  setClaudeCliPath
+  setClaudeCliPath,
+  subscribeClaudeCliStatus
 } from './claude-cli'
 import {
   backgroundLogs,
@@ -360,6 +361,14 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
+  subscribeClaudeCliStatus((status) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send('claude-cli:status', status)
+      }
+    }
+  })
+
   ipcMain.handle('defaults:get', () => appDefaults())
 
   ipcMain.handle('cwd:save', (_event, cwd: string) => {

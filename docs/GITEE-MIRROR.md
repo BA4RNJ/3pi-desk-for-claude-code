@@ -101,7 +101,7 @@ Value: git@gitee.com:<your-gitee-name>/3pi-desk-for-claude-code.git
 git ls-remote git@gitee.com:BA4RNJ/3pi-desk-for-claude-code.git
 ```
 
-应该能看到 `refs/heads/main` 和 `refs/tags/v0.4.1`、`refs/tags/wsl-v0.4.1` 等。
+应该能看到 `refs/heads/main` 和 `refs/tags/v0.4.2`、`refs/tags/v0.1.4.1` 等。
 
 ## 同步范围
 

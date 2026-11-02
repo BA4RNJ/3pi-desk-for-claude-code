@@ -66,28 +66,35 @@ In **Settings → Branches** (or Rulesets):
 
 ## Tag and publish
 
-The release workflow builds Linux AppImage/deb, a macOS dmg/zip, and the WSL2 AppImage/deb,
-generates `SHA256SUMS`, `SHA256SUMS-macos`, and `SHA256SUMS-wsl`, and creates a **draft** GitHub
-Release. macOS artifacts are unsigned and unnotarized unless Apple signing secrets are added to
-the repository; their filename includes the runner architecture.
+The Electron release workflow builds Linux AppImage/deb and the WSL2 AppImage/deb, and can build
+a macOS dmg/zip when enabled. It generates `SHA256SUMS` / `SHA256SUMS-wsl` (plus
+`SHA256SUMS-macos` when macOS is built) and creates a **draft** GitHub Release. macOS artifacts
+are unsigned and unnotarized unless Apple signing secrets are added to the repository; their
+filename includes the runner architecture.
 
-macOS building is **opt-in** while the macOS work is in progress. Normal `v*` tag pushes skip the
-macOS job. To build it for a specific tag, run the workflow manually with `build_macos` enabled:
+macOS Electron building is **opt-in** while the macOS work is in progress. Normal `v*` tag pushes
+skip the macOS job. To build it for a specific tag, run the workflow manually with `build_macos`
+enabled:
 
 ```bash
 gh workflow run release.yml -f tag=v0.4.2 -f build_macos=true
 ```
 
-Alternatively set the repository variable `BUILD_MACOS=true` to re-enable macOS builds for tag
-pushes. The manual dispatch also works for Linux/WSL-only rebuilds (`-f build_macos=false`).
+Set the repository variable `BUILD_MACOS=true` to re-enable macOS builds for tag pushes. The
+manual dispatch also works for Linux/WSL-only rebuilds (`-f build_macos=false`).
+
+Electron releases use a three-part tag:
 
 ```bash
 git tag -a v0.4.2 -m "3PI Desk for Claude Code v0.4.2"
 git push origin v0.4.2
 ```
 
-The `wsl-v*` workflow remains available for an optional WSL-only release, but normal `v*`
-releases include the WSL2 packages alongside Linux and macOS.
+Native macOS releases use a numeric four-part tag, for example `v0.1.4.1`, and are built from
+`apps/macos` with `scripts/native/package-standalone.sh` on Apple Silicon. They are a separate
+channel; the Electron release workflow only accepts the three-part Electron version. The
+`wsl-v*` workflow remains available for an optional WSL-only release, but normal Electron `v*`
+releases include the WSL2 packages alongside Linux.
 
 Then:
 

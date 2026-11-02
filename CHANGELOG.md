@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.4.2] - 2026-11-03
 
+### Added
+
+- Experimental macOS ARM64 native SwiftUI frontend (`apps/macos`) with a local Node agent bridge
+  (`packages/agent-bridge`) that reuses the same settings, session, files, extensions, and
+  background services as Electron. Native releases use four-part tags and are documented in
+  [`docs/MACOS-NATIVE.md`](docs/MACOS-NATIVE.md).
+- The Electron release workflow now classifies `v*` tags: three-part tags build the Electron
+  packages, four-part tags are ignored by that workflow.
+
 ### Changed
 
 - Default packages are now slim. The Claude Code CLI is no longer bundled; it is resolved at
