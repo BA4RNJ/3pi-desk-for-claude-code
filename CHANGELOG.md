@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- WSL2/WSLg edition: `npm run package:wsl` / `npm run dist:wsl`, a separate
+  `electron-builder.wsl.yml`, a dedicated `release-wsl.yml` workflow, and `docs/WSL.md`.
+- Runtime WSL detection. The WSL edition skips the system tray and global shortcut, flashes the
+  Windows taskbar when a turn finishes (WSLg has no notification daemon), and opens links and
+  files through the Windows default browser/application.
+- CJK and emoji font recommendations for the WSL deb.
+- Single-instance handling, so launching the app again focuses the existing window.
+
+### Fixed
+
+- Closing the window with "close to tray" enabled no longer leaves a hidden, unreachable process
+  when no system tray is available (for example under WSLg).
+
 ## [0.4.0] - 2026-11-02
 
 Initial public release.

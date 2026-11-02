@@ -1,0 +1,35 @@
+# WSL2 / WSLg edition.
+#
+# Extends the regular Linux configuration so code, asarUnpack, extraResources,
+# and package targets stay in sync. Only identity and WSL-specific dependencies
+# are overridden here.
+extends: ./electron-builder.yml
+
+productName: 3PI Desk for Claude Code WSL
+appId: local.3pidesk.wsl
+
+# Electron derives app_id / WM_CLASS from desktopName. Keeping it distinct
+# prevents the WSL edition from overwriting the regular Linux .desktop entry
+# and matches the WM_CLASS set by the main process.
+extraMetadata:
+  desktopName: 3pi-desk-wsl
+
+directories:
+  output: release-wsl
+
+linux:
+  executableName: 3pi-desk-wsl
+  artifactName: 3pi-desk-wsl-${version}-${arch}.${ext}
+  synopsis: 3PI Desk for Claude Code (WSL2 edition)
+  description: 3PI Desk for Claude Code, packaged for WSL2 + WSLg.
+
+deb:
+  # `packageName` only changes the dpkg package name, so the WSL deb can be
+  # installed alongside the regular `claude-desk` package. Both editions still
+  # share ~/.config/claude-desk and ~/.claude because package.json `name` is
+  # unchanged.
+  packageName: claude-desk-wsl
+  recommends:
+    - libappindicator3-1
+    - fonts-noto-cjk
+    - fonts-noto-color-emoji

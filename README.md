@@ -93,6 +93,17 @@
 
 发布包内包含 Anthropic 的 Claude Code CLI；再分发和使用该二进制需遵守 Anthropic 的条款。
 
+## WSL2 / WSLg
+
+在 Windows 上通过 WSLg 使用时，请下载带 `wsl` 字样的产物：
+
+- **deb**：`sudo apt install ./3pi-desk-wsl-*.deb`，然后运行 `3pi-desk-wsl`。
+- **AppImage**：`chmod +x 3pi-desk-wsl-*.AppImage` 后运行；WSL 中通常需要 `libfuse2t64`。
+
+WSL 版与 Linux 版共用源码，但使用独立的可执行文件、deb 包名和桌面入口，可以并存。它会自动
+关闭系统托盘和全局快捷键，并优先通过 Windows 默认浏览器/应用打开链接和文件。完整说明、
+字体依赖、代理和已知限制见 [`docs/WSL.md`](docs/WSL.md)。
+
 ## 需要单独安装 Claude Code 吗？
 
 **不需要。** 打包版和源码版都通过 Claude Agent SDK 内置了官方 Claude Code CLI：
@@ -372,6 +383,19 @@ Download Linux packages from
 
 Release packages include Anthropic's Claude Code CLI; redistributing and using that binary is
 subject to Anthropic's terms.
+
+## WSL2 / WSLg
+
+On Windows, use the artifacts with the `wsl` suffix:
+
+- **deb**: `sudo apt install ./3pi-desk-wsl-*.deb`, then run `3pi-desk-wsl`.
+- **AppImage**: `chmod +x 3pi-desk-wsl-*.AppImage` and run it; WSL usually needs `libfuse2t64`.
+
+The WSL edition shares the source with the Linux edition but uses a separate executable, deb
+package name, and desktop entry, so both can be installed side by side. It automatically disables
+the system tray and global shortcuts, and opens links/files through the Windows default
+browser/application. See [`docs/WSL.md`](docs/WSL.md) for fonts, proxies, limitations, and
+troubleshooting.
 
 ## Do I need to install Claude Code?
 
