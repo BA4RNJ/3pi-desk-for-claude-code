@@ -225,6 +225,11 @@ const api: DeskApi = {
     const listener = (): void => callback()
     ipcRenderer.on('app:new-tab', listener)
     return () => ipcRenderer.removeListener('app:new-tab', listener)
+  },
+  onOpenSettingsRequest: (callback: () => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('app:open-settings', listener)
+    return () => ipcRenderer.removeListener('app:open-settings', listener)
   }
 }
 

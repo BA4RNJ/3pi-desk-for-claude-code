@@ -36,12 +36,15 @@ In **Settings → Branches** (or Rulesets):
    npm run typecheck
    npm test
    npx electron-vite build
-   npm run dist
+   npm run dist:linux   # on Linux
+   npm run dist:mac     # on macOS (unsigned unless signing secrets are configured)
    ```
 
 4. Verify the packages launch from a clean environment:
    - AppImage: `chmod +x 3pi-desk-*.AppImage && ./3pi-desk-*.AppImage`
    - deb: install into a disposable VM/container.
+   - macOS dmg: open it, drag the app to Applications, right-click → Open (unsigned build), and
+     send one prompt.
 5. Run a clean-clone check:
 
    ```bash
@@ -63,8 +66,10 @@ In **Settings → Branches** (or Rulesets):
 
 ## Tag and publish
 
-The release workflow builds AppImage and deb, generates `SHA256SUMS`, and creates a **draft**
-GitHub Release.
+The release workflow builds Linux AppImage/deb and a macOS dmg/zip, generates
+`SHA256SUMS` / `SHA256SUMS-macos`, and creates a **draft** GitHub Release. macOS artifacts are
+unsigned and unnotarized unless Apple signing secrets are added to the repository; their filename
+includes the runner architecture.
 
 ```bash
 git tag -a v0.4.0 -m "3PI Desk for Claude Code v0.4.0"
@@ -73,13 +78,14 @@ git push origin v0.4.0
 
 Then:
 
-1. Open **Actions → Release** and wait for the Linux job.
+1. Open **Actions → Release** and wait for the Linux and macOS jobs.
 2. Open **Releases**, review the draft, and add a short legal note:
 
    > Release packages include Anthropic's Claude Code CLI. Use and redistribution are subject to
    > Anthropic's legal agreements. See `THIRD_PARTY_NOTICES.md`.
 
-3. Download one artifact, verify `SHA256SUMS`, launch it, and send one real prompt.
+3. Download one artifact per platform, verify `SHA256SUMS` / `SHA256SUMS-macos`, launch it, and
+   send one real prompt.
 4. Publish the draft.
 
 ## Licensing reminder

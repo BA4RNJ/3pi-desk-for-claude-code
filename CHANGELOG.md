@@ -20,7 +20,27 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Closing the window with "close to tray" enabled no longer leaves a hidden, unreachable process
-  when no system tray is available (for example under WSLg).
+  when no system tray is available (WSLg, or a GNOME session without a tray extension).
+
+## [Unreleased]
+
+### Added
+
+- macOS support: dmg/zip electron-builder targets, hardened-runtime entitlements, a monochrome
+  template tray icon, a native application menu with standard Cmd shortcuts, Dock integration, and
+  `package:mac` / `dist:mac` scripts. CI verifies the macOS build; the release workflow publishes
+  an unsigned dmg/zip (the artifact name includes the runner architecture).
+
+### Changed
+
+- `npm run package` / `npm run dist` now build for the host platform. Explicit `package:linux`,
+  `dist:linux`, `package:mac`, and `dist:mac` scripts were added.
+- Hardware acceleration is disabled only on Linux; macOS keeps GPU acceleration.
+
+### Fixed
+
+- macOS: Cmd+C/V/A/Q no longer stop working, closing the last window keeps the app alive for the
+  Dock/tray, and the menu-bar icon uses a correctly sized template image.
 
 ## [0.4.0] - 2026-11-02
 
@@ -63,7 +83,8 @@ Initial public release.
 
 ### Known limitations
 
-- Linux only (tested on Ubuntu 24.04 / GNOME).
+- Linux (tested on Ubuntu 24.04 / GNOME) and macOS. macOS CI artifacts are unsigned; build from
+  source if the published architecture does not match your Mac.
 - Cloud sessions and Anthropic usage/limit APIs require an Anthropic account and are unavailable
   with third-party providers.
 - No built-in auto-update feed.

@@ -7,7 +7,8 @@ import {
   Menu,
   nativeImage,
   shell,
-  Tray
+  Tray,
+  type MenuItemConstructorOptions
 } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -41,6 +42,7 @@ import {
 } from './settings'
 import { providerConsoleUrl } from '../shared/providers'
 import { isWslEnvironment } from '../shared/environment'
+import { ensureMacPath } from './shell-path'
 import { findModelContextWindow, getModels, testApi } from './models'
 import { versionInfo } from './version'
 import {
@@ -92,8 +94,12 @@ import type {
   SessionState
 } from '../shared/types'
 
-app.disableHardwareAcceleration()
-app.commandLine.appendSwitch('disable-gpu-sandbox')
+// Ubuntu's sandbox/GPU stack can crash Electron. macOS handles GPU
+// acceleration natively, so keep hardware acceleration enabled there.
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu-sandbox')
+}
 
 /**
  * WSL, with or without WSLg, has no Windows system tray and cannot receive
@@ -130,7 +136,9 @@ function windowClass(): string {
   return app.isPackaged ? basename(process.execPath) : '3pi-desk'
 }
 
-app.commandLine.appendSwitch('class', windowClass())
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('class', windowClass())
+}
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -153,6 +161,17 @@ function appIconPath(): string {
   const packaged = join(process.resourcesPath, 'icon.png')
   if (existsSync(packaged)) return packaged
   return join(app.getAppPath(), 'resources', 'icon.png')
+}
+
+/**
+ * macOS menu-bar icons should be monochrome template images so AppKit can
+ * adapt them to light/dark menu bars. Other platforms keep the full-color icon.
+ */
+function trayIconPath(): string {
+  if (process.platform !== 'darwin') return appIconPath()
+  const packaged = join(process.resourcesPath, 'trayTemplate.png')
+  if (existsSync(packaged)) return packaged
+  return join(app.getAppPath(), 'resources', 'trayTemplate.png')
 }
 
 function isSafeExternalUrl(url: string): boolean {
@@ -749,6 +768,8 @@ function registerIpc(): void {
 }
 
 function showWindow(): void {
+  // Unhide the app itself on macOS (e.g. after Cmd+H) before focusing a window.
+  if (process.platform === 'darwin') app.show()
   if (!mainWindow) {
     createWindow()
     return
@@ -769,12 +790,87 @@ function syncGlobalShortcut(enabled: boolean): void {
   }
 }
 
+function openSettings(): void {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow()
+    mainWindow?.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('app:open-settings')
+    })
+    return
+  }
+  showWindow()
+  mainWindow?.webContents.send('app:open-settings')
+}
+
+/**
+ * macOS requires an application menu for the standard shortcuts (Cmd+C/V/A,
+ * Cmd+Q, Cmd+W) to work. Windows/Linux keep the frameless, menu-less layout.
+ */
+function installApplicationMenu(): void {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+    return
+  }
+
+  const viewItems: MenuItemConstructorOptions[] = app.isPackaged
+    ? [
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    : [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: '3PI Desk for Claude Code',
+        submenu: [
+          { role: 'about' },
+          {
+            label: 'Settings…',
+            accelerator: 'Cmd+,',
+            click: openSettings
+          },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' }
+        ]
+      },
+      { label: 'File', submenu: [{ role: 'close' }] },
+      { role: 'editMenu' },
+      { label: 'View', submenu: viewItems },
+      { role: 'windowMenu' }
+    ])
+  )
+}
+
 function createTray(): void {
   if (tray) return
   try {
-    const iconPath = appIconPath()
-    const image = nativeImage.createFromPath(iconPath).resize({ width: 22, height: 22 })
-    tray = new Tray(image)
+    const image = nativeImage.createFromPath(trayIconPath())
+    if (process.platform === 'darwin') {
+      image.setTemplateImage(true)
+      tray = new Tray(image)
+    } else {
+      tray = new Tray(image.resize({ width: 22, height: 22 }))
+    }
     trayAvailable = true
     tray.setToolTip('3PI Desk')
     tray.setContextMenu(
@@ -797,10 +893,14 @@ function createTray(): void {
         }
       ])
     )
-    tray.on('click', () => {
-      if (mainWindow?.isVisible()) mainWindow.hide()
-      else showWindow()
-    })
+    // On macOS the context menu opens on left click; toggling the window here
+    // as well would fight the native menu behavior.
+    if (process.platform !== 'darwin') {
+      tray.on('click', () => {
+        if (mainWindow?.isVisible()) mainWindow.hide()
+        else showWindow()
+      })
+    }
   } catch {
     // Tray may be unavailable in some desktop environments.
   }
@@ -818,7 +918,20 @@ if (!hasSingleInstanceLock) {
 
 if (hasSingleInstanceLock) {
   app.whenReady().then(() => {
-    Menu.setApplicationMenu(null)
+    // Finder-launched macOS apps miss the login shell PATH; restore it before
+    // any child process (Claude Code tools, plugins, background sessions) runs.
+    ensureMacPath()
+    installApplicationMenu()
+    if (process.platform === 'darwin') {
+      app.setAboutPanelOptions({
+        applicationName: '3PI Desk for Claude Code',
+        applicationVersion: app.getVersion(),
+        copyright: 'Copyright © 2026 BA4RNJ',
+        credits: 'Powered by the Claude Agent SDK'
+      })
+      // In development the bundle icon is Electron's; show the product icon.
+      if (!app.isPackaged) app.dock?.setIcon(appIconPath())
+    }
     registerIpc()
     createWindow()
     if (runningUnderWsl) {
@@ -831,11 +944,18 @@ if (hasSingleInstanceLock) {
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else showWindow()
     })
   })
 }
 
 app.on('window-all-closed', () => {
+  if (process.platform === 'darwin') {
+    // macOS apps stay running without windows; the Dock/tray can reopen the UI.
+    for (const manager of managers.values()) void manager.stop()
+    managers.clear()
+    return
+  }
   if (trayAvailable && getPreferences().closeToTray && !quitting) return
   for (const manager of managers.values()) void manager.stop()
   managers.clear()

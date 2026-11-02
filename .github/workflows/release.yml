@@ -82,3 +82,61 @@ jobs:
             --draft \
             --generate-notes \
             --title "3PI Desk for Claude Code ${GITHUB_REF_NAME}"
+
+  macos:
+    name: Build macOS packages
+    needs: linux
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure native binaries
+        run: |
+          node node_modules/electron/install.js
+          node -e "const p='@anthropic-ai/claude-agent-sdk-'+process.platform+'-'+process.arch; const f=require.resolve(p+'/claude'); if(!require('fs').existsSync(f)) process.exit(1); console.log(f)"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build application
+        run: npx electron-vite build
+
+      - name: Package dmg and zip (unsigned)
+        run: npx electron-builder --mac dmg zip --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate checksums
+        run: |
+          cd release
+          shasum -a 256 *.dmg *.zip > SHA256SUMS-macos
+          cat SHA256SUMS-macos
+          ls -lh *.dmg *.zip
+
+      - name: Upload macOS artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            release/*.dmg \
+            release/*.zip \
+            release/SHA256SUMS-macos \
+            --clobber

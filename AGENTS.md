@@ -16,8 +16,10 @@ cd /path/to/3pi-desk-for-claude-code
 
 npm run typecheck
 npx electron-vite build
-npm run package                 # electron-builder -> release/linux-unpacked/3pi-desk
-node scripts/smoke-packaged.mjs # real API call; use with care
+npm run package                 # host platform -> release/linux-unpacked or release/mac-<arch>/*.app
+npm run package:mac             # explicit macOS dir build (run on macOS)
+npm run dist:mac                # dmg + zip (unsigned)
+node scripts/smoke-packaged.mjs # auto-detects Linux/macOS output; real API call; use with care
 ```
 
 The project path contains spaces. Always quote it in shell commands.
@@ -26,9 +28,10 @@ The project path contains spaces. Always quote it in shell commands.
 
 1. **Never delete user chats automatically.** Do not add cleanup that removes sessions or
    `~/.claude/projects/**`. UI deletion must use the existing backup-then-delete flow in
-   `src/main/index.ts` (`findSessionTranscript` + copy to
-   `~/.config/claude-desk/session-backups/`). Test only in temporary workspaces, and never call
-   delete on sessions you did not create.
+   `src/main/index.ts` (`findSessionTranscript` + copy to the app data directory:
+   `~/.config/claude-desk/session-backups/` on Linux,
+   `~/Library/Application Support/claude-desk/session-backups/` on macOS). Test only in temporary
+   workspaces, and never call delete on sessions you did not create.
 2. **Agent prompts are inline, never full-screen.** Permission, question, and plan prompts live in
    `PermissionBar.tsx` / `QuestionBar.tsx` above the composer. Do not reintroduce modal backdrops
    for `canUseTool` flows.
@@ -36,9 +39,11 @@ The project path contains spaces. Always quote it in shell commands.
    translates them at runtime. Add dictionary entries for new strings and test the Chinese toggle.
 4. **Keep the packaged native CLI path fix.** `resolveClaudeExecutable()` in
    `src/main/session.ts` must point at `app.asar.unpacked`, and `electron-builder.yml` must keep
-   `asarUnpack: node_modules/@anthropic-ai/**`. Without it sessions fail with `spawn ENOTDIR`.
-5. **Do not rename the npm package `claude-desk`** without migrating `~/.config/claude-desk/`
-   (workspaces, preferences, API profiles, backups). Product/display name is 3PI Desk for Claude
+   `asarUnpack: node_modules/@anthropic-ai/**`. This must work on Linux and macOS; without it
+   sessions fail with `spawn ENOTDIR` in both packaged builds.
+5. **Do not rename the npm package `claude-desk`** without migrating the app data directory
+   (`~/.config/claude-desk/` on Linux, `~/Library/Application Support/claude-desk/` on macOS;
+   workspaces, preferences, API profiles, backups). Product/display name is 3PI Desk for Claude
    Code; executable is `3pi-desk`.
 6. **Plugin installs must use the cancellable runner.** `runPluginCommand` spawns with
    `stdio: ['ignore','pipe','pipe']` and `--json`. Using `execFile` with open stdin can hang
@@ -88,6 +93,8 @@ The project path contains spaces. Always quote it in shell commands.
 - English is runtime/DOM-translated; some dynamic text may remain Chinese.
 - AskUserQuestion is unavailable in subagents (Claude Code limitation).
 - Global shortcut may not work on Wayland; PDF support depends on the model/gateway.
+- macOS builds are unsigned/unnotarized by default; CI publishes one runner architecture, so build
+  from source if that does not match the target Mac.
 - App package size is ~640 MB because it bundles the Claude Code binary.
 
 ## Verification checklist

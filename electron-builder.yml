@@ -22,6 +22,10 @@ asarUnpack:
 extraResources:
   - from: resources/icon.png
     to: icon.png
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
   - from: LICENSE
     to: LICENSE.txt
   - from: THIRD_PARTY_NOTICES.md
@@ -40,3 +44,17 @@ linux:
   vendor: BA4RNJ
   synopsis: 3PI Desk for Claude Code
   description: 3PI Desk for Claude Code - a local GUI for Claude Code powered by the Claude Agent SDK.
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  artifactName: 3pi-desk-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  darkModeSupport: true
+  extendInfo:
+    CFBundleDisplayName: 3PI Desk for Claude Code
+    NSHumanReadableCopyright: Copyright © 2026 BA4RNJ
