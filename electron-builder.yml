@@ -1,0 +1,30 @@
+appId: local.3pidesk
+productName: 3PI Desk for Claude Code
+copyright: Local application
+electronDist: node_modules/electron/dist
+directories:
+  output: release
+  buildResources: build
+files:
+  - "!src/**"
+  - "!docs/**"
+  - "!README.md"
+  - "!AGENTS.md"
+  - "!scripts/**"
+  - "!electron.vite.config.ts"
+  - "!tsconfig*.json"
+  - "!build/**"
+  - "!release/**"
+  - "!.git/**"
+  - "!*.log"
+asarUnpack:
+  - node_modules/@anthropic-ai/**
+npmRebuild: false
+linux:
+  target:
+    - dir
+  category: Development
+  icon: build/icon.png
+  executableName: 3pi-desk
+  synopsis: 3PI Desk for Claude Code
+  description: 3PI Desk for Claude Code - a local GUI for Claude Code powered by the Claude Agent SDK.

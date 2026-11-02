@@ -1,0 +1,702 @@
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  shell,
+  Tray
+} from 'electron'
+import { existsSync } from 'node:fs'
+import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import {
+  deleteSession,
+  forkSession,
+  getSessionMessages,
+  listSessions,
+  renameSession,
+  tagSession
+} from '@anthropic-ai/claude-agent-sdk'
+import { SessionManager, type StartOptions } from './session'
+import {
+  buildExtraArgs,
+  defaultCwd,
+  applyApiProfile,
+  deleteApiProfile,
+  deleteCustomModel,
+  getApiSettings,
+  getPreferences,
+  getSettingsSnapshot,
+  saveApiProfile,
+  saveApiSettings,
+  saveCwd,
+  saveCustomModel,
+  savePermissionRules,
+  savePreferences
+} from './settings'
+import { providerConsoleUrl } from '../shared/providers'
+import { findModelContextWindow, getModels, testApi } from './models'
+import { versionInfo } from './version'
+import {
+  backgroundLogs,
+  backgroundRemove,
+  backgroundStop,
+  listBackgroundSessions,
+  startBackgroundSession,
+  trustDirectory
+} from './background'
+import {
+  fileTree,
+  pickAttachmentFiles,
+  readFileContent,
+  searchFiles,
+  writeFileContent
+} from './files'
+import {
+  cancelPluginAction,
+  createExtensionFile,
+  deleteExtensionFile,
+  listExtensions,
+  marketplaceAdd,
+  marketplaceRemove,
+  marketplaceUpdate,
+  pluginAction,
+  pluginMarketplaces,
+  readExtensionFile,
+  readHooksConfig,
+  readMcpConfig,
+  saveHooksConfig,
+  saveMcpConfig,
+  togglePlugin,
+  writeExtensionFile,
+  type PluginAction
+} from './extensions'
+import type {
+  ApiSettingsPatch,
+  AppDefaults,
+  CustomModel,
+  DesktopEvent,
+  EffortSetting,
+  PermissionMode,
+  PermissionResponsePayload,
+  PreferencesPatch,
+  SendMessagePayload,
+  SessionInfo,
+  SessionStartOptions,
+  SessionState
+} from '../shared/types'
+
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+
+let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let quitting = false
+const managers = new Map<string, SessionManager>()
+
+function send(channel: string, payload: unknown): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload)
+  }
+}
+
+async function findSessionTranscript(sessionId: string): Promise<string | null> {
+  const projectsRoot = join(homedir(), '.claude', 'projects')
+  try {
+    const entries = await readdir(projectsRoot, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const candidate = join(projectsRoot, entry.name, `${sessionId}.jsonl`)
+      try {
+        const info = await stat(candidate)
+        if (info.isFile()) return candidate
+      } catch {
+        // keep looking
+      }
+    }
+  } catch {
+    // no projects dir
+  }
+  return null
+}
+
+function createManager(tabId: string): SessionManager {
+  return new SessionManager({
+    emitEvent: (message: DesktopEvent) => send('session:event', { tabId, message }),
+    emitState: (state: SessionState) => send('session:state', { tabId, state }),
+    emitPermission: (request) => {
+      send('permission:request', { tabId, request })
+      if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true)
+    },
+    emitPermissionCancel: (id) => send('permission:cancel', { tabId, id }),
+    onResult: () => {
+      // Notifications are shown from the renderer so they can include the tab title.
+    }
+  })
+}
+
+function managerFor(tabId: string): SessionManager | undefined {
+  return managers.get(tabId)
+}
+
+function appDefaults(): AppDefaults {
+  return {
+    cwd: defaultCwd(),
+    home: homedir(),
+    platform: process.platform
+  }
+}
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 940,
+    minHeight: 640,
+    show: false,
+    backgroundColor: '#F0EEE6',
+    title: '3PI Desk',
+    icon: join(app.getAppPath(), 'resources', 'icon.png'),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      spellcheck: false
+    }
+  })
+
+  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('focus', () => mainWindow?.flashFrame(false))
+  mainWindow.on('close', (event) => {
+    if (!quitting && getPreferences().closeToTray) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const current = mainWindow?.webContents.getURL()
+    if (current && url !== current) {
+      event.preventDefault()
+      void shell.openExternal(url)
+    }
+  })
+
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (devUrl) {
+    void mainWindow.loadURL(devUrl)
+  } else {
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+function registerIpc(): void {
+  ipcMain.handle('defaults:get', () => appDefaults())
+
+  ipcMain.handle('cwd:save', (_event, cwd: string) => {
+    saveCwd(cwd)
+  })
+
+  ipcMain.handle(
+    'session:start',
+    async (_event, tabId: string, options: SessionStartOptions) => {
+      saveCwd(options.cwd)
+      let manager = managerFor(tabId)
+      if (!manager) {
+        manager = createManager(tabId)
+        managers.set(tabId, manager)
+      }
+      const preferences = getPreferences()
+      const startOptions: StartOptions = {
+        ...options,
+        extraArgs: buildExtraArgs(preferences),
+        maxBudgetUsd: preferences.maxBudgetUsd ?? undefined,
+        additionalDirectories: preferences.additionalDirectories,
+        allowedTools: preferences.allowedTools,
+        disallowedTools: preferences.disallowedTools,
+        contextWindow: await findModelContextWindow(options.model)
+      }
+      return manager.start(startOptions)
+    }
+  )
+
+  ipcMain.handle('session:stop', async (_event, tabId: string) => {
+    const manager = managerFor(tabId)
+    if (!manager) return
+    await manager.stop()
+    managers.delete(tabId)
+  })
+
+  ipcMain.handle(
+    'session:send',
+    async (_event, tabId: string, payload: SendMessagePayload) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.send(payload)
+    }
+  )
+
+  ipcMain.handle('session:interrupt', async (_event, tabId: string) => {
+    await managerFor(tabId)?.interrupt()
+  })
+
+  ipcMain.handle('session:commands', async (_event, tabId: string) => {
+    const manager = managerFor(tabId)
+    if (!manager) return []
+    try {
+      return await manager.supportedCommands()
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('session:setModel', async (_event, tabId: string, model: string) => {
+    const manager = managerFor(tabId)
+    if (!manager) throw new Error('Chat has not started.')
+    await manager.setModel(model, await findModelContextWindow(model))
+  })
+
+  ipcMain.handle(
+    'session:setPermissionMode',
+    async (_event, tabId: string, mode: PermissionMode) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.setPermissionMode(mode)
+    }
+  )
+
+  ipcMain.handle(
+    'session:setEffort',
+    async (_event, tabId: string, effort: EffortSetting) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.setEffort(effort)
+    }
+  )
+
+  ipcMain.handle(
+    'permission:respond',
+    (_event, tabId: string, response: PermissionResponsePayload) => {
+      managerFor(tabId)?.respondPermission(
+        response.id,
+        response.decision,
+        response.always,
+        response.message,
+        response.answers
+      )
+    }
+  )
+
+  ipcMain.handle(
+    'session:rewind',
+    async (_event, tabId: string, userMessageId: string, dryRun: boolean) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      return manager.rewind(userMessageId, dryRun)
+    }
+  )
+
+  ipcMain.handle('session:contextUsage', async (_event, tabId: string) => {
+    const manager = managerFor(tabId)
+    if (!manager) return null
+    try {
+      return await manager.contextUsage()
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('session:mcpStatus', async (_event, tabId: string) => {
+    const manager = managerFor(tabId)
+    if (!manager) return []
+    try {
+      return await manager.mcpStatus()
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(
+    'session:toggleMcp',
+    async (_event, tabId: string, name: string, enabled: boolean) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.toggleMcp(name, enabled)
+    }
+  )
+
+  ipcMain.handle('sessions:list', async (_event, cwd: string): Promise<SessionInfo[]> => {
+    const sessions = await listSessions({ dir: cwd, limit: 60, includeWorktrees: true })
+    return sessions.map((session) => ({
+      sessionId: session.sessionId,
+      summary: session.summary,
+      lastModified: session.lastModified,
+      firstPrompt: session.firstPrompt,
+      cwd: session.cwd,
+      gitBranch: session.gitBranch,
+      customTitle: session.customTitle,
+      tag: (session as { tag?: string }).tag,
+      fileSize: session.fileSize
+    }))
+  })
+
+  ipcMain.handle('sessions:all', async (_event, limit = 200) => {
+    const sessions = await listSessions({ limit, includeWorktrees: true })
+    return sessions.map((session) => ({
+      sessionId: session.sessionId,
+      summary: session.summary,
+      lastModified: session.lastModified,
+      firstPrompt: session.firstPrompt,
+      cwd: session.cwd,
+      gitBranch: session.gitBranch,
+      customTitle: session.customTitle,
+      tag: (session as { tag?: string }).tag,
+      fileSize: session.fileSize
+    }))
+  })
+
+  ipcMain.handle('sessions:messages', async (_event, sessionId: string, cwd: string) => {
+    return getSessionMessages(sessionId, { dir: cwd })
+  })
+
+  ipcMain.handle(
+    'sessions:rename',
+    async (_event, sessionId: string, title: string, cwd: string) => {
+      await renameSession(sessionId, title, { dir: cwd })
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:delete',
+    async (_event, sessionId: string, cwd: string) => {
+      const source = await findSessionTranscript(sessionId)
+      if (!source) {
+        throw new Error('Could not find the chat transcript; deletion was cancelled to protect the conversation.')
+      }
+      const backupDir = join(app.getPath('userData'), 'session-backups')
+      await mkdir(backupDir, { recursive: true })
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const backupPath = join(backupDir, `${stamp}-${sessionId}.jsonl`)
+      await copyFile(source, backupPath)
+      await deleteSession(sessionId, { dir: cwd })
+      return backupPath
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:tag',
+    async (_event, sessionId: string, tag: string | null, cwd: string) => {
+      await tagSession(sessionId, tag, { dir: cwd })
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:fork',
+    async (_event, sessionId: string, cwd: string, upToMessageId?: string) => {
+      const result = await forkSession(sessionId, {
+        dir: cwd,
+        upToMessageId
+      })
+      return result.sessionId
+    }
+  )
+
+  ipcMain.handle(
+    'files:export',
+    async (_event, defaultName: string, content: string): Promise<string | null> => {
+      const result = await dialog.showSaveDialog(mainWindow!, {
+        title: 'Export chat',
+        defaultPath: join(defaultCwd(), defaultName),
+        filters: [{ name: 'Markdown', extensions: ['md'] }]
+      })
+      if (result.canceled || !result.filePath) return null
+      await writeFile(result.filePath, content, 'utf8')
+      return result.filePath
+    }
+  )
+
+  ipcMain.handle(
+    'dialog:pickDirectory',
+    async (_event, defaultPath?: string): Promise<string | null> => {
+      const result = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Select project folder',
+        defaultPath: defaultPath || defaultCwd(),
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
+    }
+  )
+
+  ipcMain.handle('files:pick', async () => pickAttachmentFiles())
+  ipcMain.handle('files:search', async (_event, cwd: string, query: string) =>
+    searchFiles(cwd, query)
+  )
+  ipcMain.handle('files:tree', async (_event, cwd: string) => fileTree(cwd))
+  ipcMain.handle('files:read', async (_event, cwd: string, path: string) =>
+    readFileContent(cwd, path)
+  )
+  ipcMain.handle('files:write', async (_event, cwd: string, path: string, text: string) => {
+    await writeFileContent(cwd, path, text)
+  })
+
+  ipcMain.handle('settings:get', () => getSettingsSnapshot())
+  ipcMain.handle('settings:saveApi', (_event, patch: ApiSettingsPatch) =>
+    saveApiSettings(patch)
+  )
+  ipcMain.handle('settings:saveApiProfile', (_event, profile: import('../shared/types').ApiProfileInput) =>
+    saveApiProfile(profile)
+  )
+  ipcMain.handle('settings:deleteApiProfile', (_event, id: string) =>
+    deleteApiProfile(id)
+  )
+  ipcMain.handle('settings:applyApiProfile', (_event, id: string) =>
+    applyApiProfile(id)
+  )
+  ipcMain.handle('settings:savePreferences', (_event, patch: PreferencesPatch) => {
+    const preferences = savePreferences(patch)
+    syncGlobalShortcut(preferences.globalShortcut)
+    return preferences
+  })
+  ipcMain.handle('settings:savePermissionRules', (_event, rules: import('../shared/types').PermissionRules) =>
+    savePermissionRules(rules)
+  )
+  ipcMain.handle('settings:saveCustomModel', (_event, model: CustomModel) =>
+    saveCustomModel(model)
+  )
+  ipcMain.handle(
+    'settings:deleteCustomModel',
+    (_event, id: string, providerId?: string) => deleteCustomModel(id, providerId)
+  )
+
+  ipcMain.handle('app:versionInfo', () => versionInfo())
+  ipcMain.handle('background:list', () => listBackgroundSessions())
+  ipcMain.handle(
+    'background:start',
+    async (_event, cwd: string, prompt: string, trust: boolean) =>
+      startBackgroundSession(cwd, prompt, trust)
+  )
+  ipcMain.handle('background:logs', (_event, id: string) => backgroundLogs(id))
+  ipcMain.handle('background:stop', (_event, id: string) => backgroundStop(id))
+  ipcMain.handle('background:remove', (_event, id: string) => backgroundRemove(id))
+  ipcMain.handle('background:trust', (_event, cwd: string) => trustDirectory(cwd))
+  ipcMain.handle('models:list', () => getModels())
+  ipcMain.handle('models:test', (_event, patch?: ApiSettingsPatch) => testApi(patch))
+
+  ipcMain.handle(
+    'extensions:list',
+    async (_event, cwd: string, tabId?: string) => {
+      const manager = tabId ? managerFor(tabId) : undefined
+      const status = manager ? await manager.mcpStatus().catch(() => []) : []
+      return listExtensions(cwd, status)
+    }
+  )
+
+  ipcMain.handle(
+    'extensions:readMcp',
+    async (_event, scope: 'user' | 'project' | 'local', cwd: string) =>
+      readMcpConfig(scope, cwd)
+  )
+
+  ipcMain.handle(
+    'extensions:saveMcp',
+    async (
+      _event,
+      scope: 'user' | 'project' | 'local',
+      cwd: string,
+      text: string
+    ) => saveMcpConfig(scope, cwd, text)
+  )
+
+  ipcMain.handle(
+    'extensions:togglePlugin',
+    async (_event, name: string, enabled: boolean, cwd: string, tabId?: string) => {
+      await togglePlugin(name, enabled)
+      const manager = tabId ? managerFor(tabId) : undefined
+      const status = manager ? await manager.mcpStatus().catch(() => []) : []
+      return listExtensions(cwd, status)
+    }
+  )
+
+  ipcMain.handle(
+    'extensions:pluginAction',
+    async (
+      _event,
+      action: PluginAction,
+      name: string,
+      cwd: string,
+      tabId?: string
+    ) => {
+      await pluginAction(action, name, cwd)
+      const manager = tabId ? managerFor(tabId) : undefined
+      const status = manager ? await manager.mcpStatus().catch(() => []) : []
+      return listExtensions(cwd, status)
+    }
+  )
+
+  ipcMain.handle('extensions:cancelPluginAction', () => cancelPluginAction())
+  ipcMain.handle('extensions:marketplaces', async (_event, cwd: string) =>
+    pluginMarketplaces(cwd)
+  )
+  ipcMain.handle('extensions:marketplaceAdd', async (_event, source: string, cwd: string) =>
+    marketplaceAdd(source, cwd)
+  )
+  ipcMain.handle(
+    'extensions:marketplaceUpdate',
+    async (_event, name: string | undefined, cwd: string) =>
+      marketplaceUpdate(name, cwd)
+  )
+  ipcMain.handle(
+    'extensions:marketplaceRemove',
+    async (_event, name: string, cwd: string) => marketplaceRemove(name, cwd)
+  )
+
+  ipcMain.handle('extensions:readFile', async (_event, path: string, cwd: string) =>
+    readExtensionFile(path, cwd)
+  )
+  ipcMain.handle(
+    'extensions:writeFile',
+    async (_event, path: string, text: string, cwd: string) => {
+      await writeExtensionFile(path, text, cwd)
+    }
+  )
+  ipcMain.handle(
+    'extensions:createFile',
+    async (
+      _event,
+      kind: 'skill' | 'agent',
+      scope: 'user' | 'project',
+      cwd: string,
+      name: string,
+      text: string
+    ) => createExtensionFile(kind, scope, cwd, name, text)
+  )
+  ipcMain.handle(
+    'extensions:deleteFile',
+    async (_event, path: string, cwd: string) => {
+      await deleteExtensionFile(path, cwd)
+    }
+  )
+  ipcMain.handle(
+    'extensions:readHooks',
+    async (_event, scope: 'user' | 'project', cwd: string) =>
+      readHooksConfig(scope, cwd)
+  )
+  ipcMain.handle(
+    'extensions:saveHooks',
+    async (_event, scope: 'user' | 'project', cwd: string, text: string) =>
+      saveHooksConfig(scope, cwd, text)
+  )
+
+  ipcMain.handle('open:path', async (_event, path: string) => {
+    if (existsSync(path)) await shell.openPath(path)
+  })
+
+  ipcMain.handle('open:backupDir', async () => {
+    const backupDir = join(app.getPath('userData'), 'session-backups')
+    await mkdir(backupDir, { recursive: true })
+    await shell.openPath(backupDir)
+  })
+
+  ipcMain.handle('open:console', async (_event, providerId?: string) => {
+    const url = providerConsoleUrl(providerId || getApiSettings().providerId)
+    if (url) await shell.openExternal(url)
+  })
+}
+
+function showWindow(): void {
+  if (!mainWindow) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function syncGlobalShortcut(enabled: boolean): void {
+  globalShortcut.unregister('CommandOrControl+Shift+Space')
+  if (enabled) {
+    try {
+      globalShortcut.register('CommandOrControl+Shift+Space', showWindow)
+    } catch {
+      // Wayland or another app may reserve the shortcut.
+    }
+  }
+}
+
+function createTray(): void {
+  if (tray) return
+  try {
+    const iconPath = join(app.getAppPath(), 'resources', 'icon.png')
+    const image = nativeImage.createFromPath(iconPath).resize({ width: 22, height: 22 })
+    tray = new Tray(image)
+  tray.setToolTip('3PI Desk')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show 3PI Desk', click: showWindow },
+      {
+        label: 'New chat',
+        click: () => {
+          showWindow()
+          mainWindow?.webContents.send('app:new-tab')
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          quitting = true
+          app.quit()
+        }
+      }
+    ])
+  )
+  tray.on('click', () => {
+    if (mainWindow?.isVisible()) mainWindow.hide()
+    else showWindow()
+  })
+  } catch {
+    // Tray may be unavailable in some desktop environments.
+  }
+}
+
+app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
+  registerIpc()
+  createWindow()
+  createTray()
+  syncGlobalShortcut(getPreferences().globalShortcut)
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (getPreferences().closeToTray && !quitting) return
+  for (const manager of managers.values()) void manager.stop()
+  managers.clear()
+  app.quit()
+})
+
+app.on('before-quit', () => {
+  quitting = true
+  globalShortcut.unregisterAll()
+  for (const manager of managers.values()) void manager.stop()
+  managers.clear()
+})

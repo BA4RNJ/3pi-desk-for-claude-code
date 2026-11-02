@@ -1,0 +1,408 @@
+import { useEffect, useLayoutEffect, useState } from 'react'
+import type { Attachment, SessionInfo } from '../../shared/types'
+import type { TodoItem, UserMessage } from './types'
+import { basename } from './lib/format'
+import { fileToAttachment } from './lib/files'
+import { setI18nLanguage, startI18n } from './i18n'
+import { useDesk } from './hooks/useDesk'
+import { findModel } from './lib/usage'
+import { ChatView } from './components/ChatView'
+import { Composer } from './components/Composer'
+import { ConfirmDialog } from './components/ConfirmDialog'
+import { EditMessageDialog } from './components/EditMessageDialog'
+import { FilePanel } from './components/FilePanel'
+import { FilePreviewDialog } from './components/FilePreviewDialog'
+import { PermissionBar } from './components/PermissionBar'
+import { QuestionBar } from './components/QuestionBar'
+import { RenameDialog } from './components/RenameDialog'
+import { RewindDialog } from './components/RewindDialog'
+import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
+import { Sidebar } from './components/Sidebar'
+import { Starburst } from './components/Starburst'
+import { TabBar } from './components/TabBar'
+import { TagDialog } from './components/TagDialog'
+import { WorkspaceManager } from './components/WorkspaceManager'
+import { TopBar } from './components/TopBar'
+
+export default function App() {
+  const desk = useDesk()
+  const activeTab = desk.activeTab
+  const [composerAttachments, setComposerAttachments] = useState<Attachment[]>([])
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [rewindTarget, setRewindTarget] = useState<string | null>(null)
+  const [tagTarget, setTagTarget] = useState<SessionInfo | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<SessionInfo | null>(null)
+  const [editTarget, setEditTarget] = useState<UserMessage | null>(null)
+  const [filePanelOpen, setFilePanelOpen] = useState(false)
+  const [previewFile, setPreviewFile] = useState<string | null>(null)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+
+  useLayoutEffect(() => {
+    startI18n(desk.language)
+    document.documentElement.lang = desk.language
+    // Start once; language changes use setI18nLanguage below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useLayoutEffect(() => {
+    setI18nLanguage(desk.language)
+    document.documentElement.lang = desk.language
+  }, [desk.language])
+
+  useEffect(() => {
+    setComposerAttachments([])
+  }, [desk.activeTabId])
+
+  useEffect(() => {
+    document.title = activeTab?.title ? `${activeTab.title} · 3PI Desk` : '3PI Desk'
+  }, [activeTab?.title])
+
+  useEffect(() => window.desk.onNewTabRequest(() => desk.newChat()), [desk.newChat])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        desk.newChat()
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
+        event.preventDefault()
+        desk.newChat()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [desk])
+
+  const handleFilesDropped = async (files: File[]): Promise<void> => {
+    const next: Attachment[] = []
+    for (const file of files) {
+      const attachment = await fileToAttachment(file)
+      if (attachment) next.push(attachment)
+    }
+    if (next.length > 0) {
+      setComposerAttachments((current) => [...current, ...next])
+    }
+  }
+
+  if (!desk.booted || !activeTab) {
+    return (
+      <div className="app-loading">
+        <span className="app-loading-mark">
+          <Starburst size={34} />
+        </span>
+        <span className="spinner" />
+        <p>正在准备 3PI Desk…</p>
+      </div>
+    )
+  }
+
+  const activeSessionId = activeTab.sessionId
+  const activeModelName =
+    findModel(desk.models, activeTab.state.model)?.name || activeTab.state.model
+  const permission = desk.currentPermission
+  const permissionTab = permission ? desk.tabs[permission.tabId] : undefined
+  const todos: TodoItem[] = (() => {
+    for (let index = activeTab.messages.length - 1; index >= 0; index -= 1) {
+      const message = activeTab.messages[index]
+      if (message.role !== 'assistant') continue
+      for (const block of message.blocks) {
+        if (block.kind !== 'tool' || block.name !== 'TodoWrite') continue
+        const raw = block.input.todos
+        if (!Array.isArray(raw)) continue
+        return raw
+          .filter((item): item is Record<string, any> => Boolean(item && typeof item === 'object'))
+          .map((item) => ({
+            content: String(item.content || ''),
+            status:
+              item.status === 'completed'
+                ? 'completed'
+                : item.status === 'in_progress'
+                  ? 'in_progress'
+                  : 'pending'
+          }))
+      }
+    }
+    return []
+  })()
+  const planPreview = permissionTab
+    ? [...permissionTab.messages]
+        .reverse()
+        .filter((message) => message.role === 'assistant')
+        .flatMap((message) =>
+          message.role === 'assistant'
+            ? message.blocks
+                .filter((block) => block.kind === 'text')
+                .map((block) => (block.kind === 'text' ? block.text : ''))
+            : []
+        )
+        .join('\n\n')
+    : ''
+
+  return (
+    <div className={`app ${filePanelOpen ? 'has-files' : ''}`}>
+      <Sidebar
+        cwd={activeTab.cwd || desk.cwd}
+        sessions={desk.sessions}
+        activeSessionId={activeSessionId}
+        connecting={activeTab.state.connecting}
+        theme={desk.theme}
+        pinnedSessions={desk.settings?.preferences.pinnedSessions || []}
+        onNew={() => desk.newChat()}
+        onSelect={(session) => void desk.selectSession(session.sessionId, session.cwd)}
+        onChooseFolder={() => setWorkspaceOpen(true)}
+        onRename={(session) => desk.setRenameTarget(session)}
+        onTag={(session) => setTagTarget(session)}
+        onExport={(session) => void desk.exportSessionById(session)}
+        onFork={(sessionId) => void desk.forkSession(sessionId)}
+        onPin={(sessionId) => void desk.pinSession(sessionId)}
+        onDelete={(session) => setDeleteTarget(session)}
+        onRefresh={() => void desk.refreshSessions()}
+        onThemeChange={desk.setTheme}
+        onOpenSettings={() => {
+          setSettingsTab('general')
+          desk.setSettingsOpen(true)
+        }}
+      />
+
+      <main className="main">
+        <TopBar
+          title={activeTab.title}
+          cwd={activeTab.cwd || desk.cwd}
+          model={activeTab.state.model}
+          models={desk.models}
+          effort={activeTab.effort}
+          permissionMode={activeTab.state.permissionMode}
+          stats={activeTab.state.stats}
+          context={activeTab.state.context}
+          usage={activeTab.usage}
+          tasks={activeTab.tasks}
+          todos={todos}
+          running={activeTab.state.running}
+          onModelChange={(model) => void desk.setModel(model)}
+          onPermissionModeChange={(mode) => void desk.setPermissionMode(mode)}
+          onEffortChange={(effort) => void desk.setEffort(effort)}
+          onOpenUsage={() => {
+            setSettingsTab('usage')
+            desk.setSettingsOpen(true)
+          }}
+          onToggleFiles={() => setFilePanelOpen((open) => !open)}
+          filesOpen={filePanelOpen}
+          onOpenPath={(path) => void desk.openPath(path)}
+        />
+
+        <TabBar
+          tabs={desk.tabs}
+          tabOrder={desk.tabOrder}
+          activeTabId={desk.activeTabId}
+          onActivate={desk.activateTab}
+          onClose={desk.closeTab}
+          onNew={() => desk.newChat()}
+        />
+
+        <ChatView
+          messages={activeTab.messages}
+          cwd={activeTab.cwd || desk.cwd}
+          running={activeTab.state.running}
+          connecting={activeTab.state.connecting}
+          loadingHistory={activeTab.loadingHistory}
+          modelName={activeModelName}
+          error={activeTab.state.error}
+          onQuickPrompt={(prompt) => void desk.sendMessage(prompt, [])}
+          onChooseFolder={() => setWorkspaceOpen(true)}
+          onFilesDropped={(files) => void handleFilesDropped(files)}
+          onRewind={(messageId) => setRewindTarget(messageId)}
+          onEdit={(messageId) => {
+            const message = activeTab.messages.find(
+              (item) => item.id === messageId && item.role === 'user'
+            )
+            if (message?.role === 'user') setEditTarget(message)
+          }}
+          onBranch={(messageId) => void desk.forkAtMessage(messageId)}
+          onRegenerate={(messageId) => void desk.regenerate(messageId)}
+          onOpenFile={(path) => setPreviewFile(path)}
+        />
+
+        <div className="composer-region">
+          {permission && permission.request.kind === 'question' && (
+            <QuestionBar
+              request={permission.request}
+              tabTitle={permission.tabTitle}
+              onSwitchTab={
+                permission.tabId !== desk.activeTabId
+                  ? () => desk.activateTab(permission.tabId)
+                  : undefined
+              }
+              onRespond={(request, decision, answers) =>
+                void desk.respondPermission(
+                  permission.tabId,
+                  request,
+                  decision,
+                  false,
+                  answers
+                )
+              }
+            />
+          )}
+          {permission && permission.request.kind !== 'question' && (
+            <PermissionBar
+              request={permission.request}
+              queued={Object.values(desk.tabs).reduce(
+                (total, tab) => total + tab.permissions.length,
+                0
+              ) - 1}
+              tabTitle={permission.tabTitle}
+              planPreview={planPreview}
+              onSwitchTab={
+                permission.tabId !== desk.activeTabId
+                  ? () => desk.activateTab(permission.tabId)
+                  : undefined
+              }
+              onRespond={(request, decision, always) =>
+                void desk.respondPermission(
+                  permission.tabId,
+                  request,
+                  decision,
+                  always
+                )
+              }
+            />
+          )}
+          <div className="composer-context">
+            <span>{activeTab.cwd ? basename(activeTab.cwd) : '未选择目录'}</span>
+            <span className="dot-separator">·</span>
+            <span>{activeTab.state.model}</span>
+            {activeTab.effort !== 'default' && (
+              <>
+                <span className="dot-separator">·</span>
+                <span>强度 {activeTab.effort}</span>
+              </>
+            )}
+          </div>
+          <Composer
+            running={activeTab.state.running}
+            connecting={activeTab.state.connecting || activeTab.loadingHistory}
+            attachments={composerAttachments}
+            onAttachmentsChange={setComposerAttachments}
+            onSend={(text, attachments) => {
+              void desk.sendMessage(text, attachments)
+            }}
+            onStop={() => void desk.stop()}
+            onSearchFiles={desk.searchFiles}
+            commands={activeTab.commands}
+          />
+        </div>
+      </main>
+
+      {filePanelOpen && (
+        <FilePanel
+          cwd={activeTab.cwd || desk.cwd}
+          onOpenFile={(path) => setPreviewFile(path)}
+          onClose={() => setFilePanelOpen(false)}
+        />
+      )}
+
+
+
+      {desk.settingsOpen && (
+        <SettingsDialog
+          initialTab={settingsTab}
+          theme={desk.theme}
+          language={desk.language}
+          settings={desk.settings}
+          models={desk.models}
+          defaults={desk.defaults}
+          activeTab={activeTab}
+          onThemeChange={desk.setTheme}
+          onLanguageChange={desk.setLanguage}
+          onClose={() => desk.setSettingsOpen(false)}
+          onSaveApi={async (patch) => {
+            await desk.saveApi(patch)
+          }}
+          onSavePreferences={async (patch) => {
+            await desk.savePreferences(patch)
+          }}
+          onTestApi={desk.testApi}
+          onSavePermissionRules={desk.savePermissionRules}
+          onSaveCustomModel={desk.saveCustomModel}
+          onDeleteCustomModel={desk.deleteCustomModel}
+          onSaveApiProfile={desk.saveApiProfile}
+          onDeleteApiProfile={desk.deleteApiProfile}
+          onApplyApiProfile={desk.applyApiProfile}
+          onOpenConsole={() => void desk.openConsole()}
+          onOpenPath={(path) => void desk.openPath(path)}
+        />
+      )}
+
+      {desk.renameTarget && (
+        <RenameDialog
+          session={desk.renameTarget}
+          onSave={(title) => void desk.renameSession(desk.renameTarget!.sessionId, title)}
+          onClose={() => desk.setRenameTarget(null)}
+        />
+      )}
+
+      {workspaceOpen && (
+        <WorkspaceManager
+          currentCwd={activeTab.cwd || desk.cwd}
+          workspaces={desk.settings?.preferences.recentWorkspaces || []}
+          onOpen={(path) => {
+            desk.openWorkspace(path)
+            setWorkspaceOpen(false)
+          }}
+          onAdd={() => {
+            void desk.chooseFolder()
+            setWorkspaceOpen(false)
+          }}
+          onRemove={(path) => void desk.removeRecentWorkspace(path)}
+          onOpenBackups={() => void desk.openBackupDir()}
+          onClose={() => setWorkspaceOpen(false)}
+        />
+      )}
+
+      {tagTarget && (
+        <TagDialog
+          session={tagTarget}
+          onSave={(tag) => void desk.tagSessionById(tagTarget, tag)}
+          onClose={() => setTagTarget(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="删除会话"
+          message={`确定删除「${deleteTarget.customTitle || deleteTarget.summary}」吗？删除前会在本机保留一份备份。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => void desk.deleteSessionById(deleteTarget)}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {editTarget && (
+        <EditMessageDialog
+          message={editTarget}
+          onSave={(text) => void desk.editAndResend(editTarget.id, text)}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {previewFile && (
+        <FilePreviewDialog
+          cwd={activeTab.cwd || desk.cwd}
+          path={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+
+      {rewindTarget && (
+        <RewindDialog
+          messageId={rewindTarget}
+          onPreview={desk.previewRewind}
+          onApply={desk.applyRewind}
+          onClose={() => setRewindTarget(null)}
+        />
+      )}
+    </div>
+  )
+}
