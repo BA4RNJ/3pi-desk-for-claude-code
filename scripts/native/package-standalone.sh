@@ -2,6 +2,8 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
+VERSION="${DESK_NATIVE_VERSION:-0.1.4.1}"
+VERSION="${VERSION#v}"
 APP="$ROOT/release/native-arm64/3PI Desk Native.app"
 if pgrep -f "$APP/Contents/MacOS/DeskNative" >/dev/null 2>&1; then
  echo 'Close 3PI Desk Native before packaging; the running application will not be overwritten.' >&2
@@ -34,9 +36,9 @@ for PACKAGE in claude-agent-sdk claude-agent-sdk-darwin-arm64; do
 done
 cp LICENSE THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/"
 cp .cache/node-runtime/node-v24.11.0-darwin-arm64/LICENSE "$APP/Contents/Resources/Node-LICENSE.txt"
-APP_PATH_FOR_PREVIEW="$APP" python3 - <<'PY'
+APP_PATH_FOR_PREVIEW="$APP" DESK_NATIVE_VERSION="$VERSION" python3 - <<'PY'
 import os, plistlib
 with open(os.environ['APP_PATH_FOR_PREVIEW']+'/Contents/Info.plist','wb') as f:
- plistlib.dump({'CFBundleName':'3PI Desk Native','CFBundleDisplayName':'3PI Desk Native','CFBundleIdentifier':'local.3pidesk.native','CFBundleExecutable':'DeskNative','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.1.4.1','CFBundleVersion':'3','NSHighResolutionCapable':True,'LSMinimumSystemVersion':'13.0'},f)
+ plistlib.dump({'CFBundleName':'3PI Desk Native','CFBundleDisplayName':'3PI Desk Native','CFBundleIdentifier':'local.3pidesk.native','CFBundleExecutable':'DeskNative','CFBundlePackageType':'APPL','CFBundleShortVersionString':os.environ['DESK_NATIVE_VERSION'],'CFBundleVersion':'3','NSHighResolutionCapable':True,'LSMinimumSystemVersion':'13.0'},f)
 PY
 printf '%s\n' "$APP"

@@ -96,6 +96,15 @@ channel; the Electron release workflow only accepts the three-part Electron vers
 `wsl-v*` workflow remains available for an optional WSL-only release, but normal Electron `v*`
 releases include the WSL2 packages alongside Linux.
 
+Pushing a four-part tag runs `release-native.yml` on an Apple Silicon GitHub runner. It builds the
+SwiftUI app, bundles Node, the SDK, and the ARM64 CLI, then attaches a zipped `.app` and
+`SHA256SUMS-native` to a draft release. Native builds are unsigned; on first launch use
+right-click → Open. To rebuild without moving the tag:
+
+```bash
+gh workflow run release-native.yml -f tag=v0.1.4.1
+```
+
 Then:
 
 1. Open **Actions → Release** and wait for the Linux, macOS, and WSL2 jobs.

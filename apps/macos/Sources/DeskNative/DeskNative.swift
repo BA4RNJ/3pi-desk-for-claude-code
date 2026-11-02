@@ -307,6 +307,11 @@ import SwiftUI
     let process = Process()
     process.executableURL = URL(fileURLWithPath: node)
     process.arguments = [script]
+    var environment = ProcessInfo.processInfo.environment
+    if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+      environment["DESK_NATIVE_VERSION"] = version
+    }
+    process.environment = environment
     let stdin = Pipe()
     let stdout = Pipe()
     process.standardInput = stdin

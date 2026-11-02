@@ -9,6 +9,6 @@ export const app = {
     throw new Error(`Unsupported native path: ${name}`)
   },
   getAppPath: () => process.cwd(),
-  getVersion: () => '0.1.4.1'
+  getVersion: () => process.env.DESK_NATIVE_VERSION || '0.1.4.1'
 }
 export const dialog = { showOpenDialog: async () => { throw new Error('Use the native file picker') } }
