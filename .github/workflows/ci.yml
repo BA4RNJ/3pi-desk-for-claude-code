@@ -12,7 +12,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel stale PR runs, but let main pushes finish instead of cancelling each
+  # other (a cancelled run still produces notification noise).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -63,6 +65,10 @@ jobs:
 
   verify-macos:
     name: Verify (macOS)
+    # macOS arm64 runners are capacity-constrained; a queued job can be canceled
+    # and mark the whole run red. Opt in with the ENABLE_MACOS_CI repository
+    # variable when macOS Electron verification is needed.
+    if: ${{ vars.ENABLE_MACOS_CI == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 35
 

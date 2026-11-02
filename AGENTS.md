@@ -121,6 +121,9 @@ The project path contains spaces. Always quote it in shell commands.
   UI parity is not certified (see `docs/MACOS-UI-PARITY.md`). Native releases use four-part tags
   and are built on macOS with `scripts/native/package-standalone.sh`; `release.yml` only builds
   the Electron channel.
+- macOS Electron verification in `ci.yml` is opt-in (`ENABLE_MACOS_CI=true`). It is skipped by
+  default because macOS arm64 runners can cancel queued jobs, which marks CI red and sends
+  failure notifications. Native macOS builds use `release-native.yml`.
 
 ## Verification checklist
 

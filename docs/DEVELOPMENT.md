@@ -80,7 +80,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
   scripts/                      Playwright smoke/regression scripts (dev only)
   docs/DEVELOPMENT.md           this file
   docs/SETUP.md                 install / third-party API tutorial
-  .github/workflows/ci.yml      typecheck + build CI
+  .github/workflows/ci.yml      typecheck + build CI (macOS verify is opt-in)
   AGENTS.md                     short AI handoff
   README.md                     user guide
 ```
@@ -542,6 +542,10 @@ node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary
 - PDF support depends on the configured model/gateway.
 - macOS packages are unsigned/unnotarized by default; CI publishes a single runner architecture, so
   build from source if that architecture does not match the target Mac.
+- macOS Electron verification in `ci.yml` is skipped by default. Set the repository variable
+  `ENABLE_MACOS_CI=true` to run it. macOS arm64 runners are capacity-constrained, and a job that
+  waits too long can be canceled and mark the whole run red (which also sends failure
+  notifications). Native macOS releases use `release-native.yml` and are unaffected.
 - The default package is ~275 MB unpacked; it resolves the Claude Code CLI at runtime. The
   offline build (`electron-builder.offline.yml`) bundles the CLI and is ~640 MB.
 - Future work: cloud/API usage limits, proper i18n, auto-update feed, richer diff editor, more
