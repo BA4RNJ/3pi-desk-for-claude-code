@@ -69,6 +69,8 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
         components/             UI (see below)
   scripts/                      Playwright smoke/regression scripts (dev only)
   docs/DEVELOPMENT.md           this file
+  docs/SETUP.md                 install / third-party API tutorial
+  .github/workflows/ci.yml      typecheck + build CI
   AGENTS.md                     short AI handoff
   README.md                     user guide
 ```

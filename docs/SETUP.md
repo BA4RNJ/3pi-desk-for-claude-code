@@ -1,0 +1,325 @@
+# 安装与连接 Claude Code 教程
+
+本教程面向两类用户：
+
+- **没有安装过 Claude Code**，只想用这个面板 + 第三方 API；
+- **已经安装过 Claude Code CLI**，想继续用现有配置和聊天记录。
+
+结论先说：**两类用户都不需要额外安装全局 `claude` 命令。** 面板自带 Claude Code CLI。
+
+---
+
+## 1. 面板和 Claude Code 是什么关系
+
+```text
+3PI Desk（Electron 界面）
+        │
+        ▼
+Claude Agent SDK（官方 SDK）
+        │  内置并启动
+        ▼
+Claude Code CLI（随应用打包的 claude 二进制）
+        │
+        ▼
+ANTHROPIC_BASE_URL（第三方 Anthropic 兼容 API）
+```
+
+- 会话、工具调用、权限、检查点等逻辑由 **Claude Code CLI** 执行；面板只负责界面和配置。
+- 关键实现：`src/main/session.ts` 的 `resolveClaudeExecutable()` 固定解析 SDK 自带的
+  `@anthropic-ai/claude-agent-sdk-<platform>-<arch>/claude`，**不会**调用你系统里的全局 `claude`。
+- 面板和 CLI 共享同一个 `~/.claude/` 目录：`settings.json`、`~/.claude.json`、MCP 配置、
+  skills、agents、hooks，以及 `~/.claude/projects/**` 下的聊天记录。
+
+---
+
+## 2. 我属于哪一类用户？
+
+| 你的情况 | 怎么做 |
+| --- | --- |
+| 没装过 Claude Code | 直接用打包版，或从源码构建；无需 `npm i -g @anthropic-ai/claude-code` |
+| 装过 Claude Code，已在 CLI 里配好第三方 API | 直接运行；面板会读取 `~/.claude/settings.json`，聊天记录也会出现 |
+| 装过 Claude Code，但只在 `.bashrc` / `.zshrc` 里 `export` 了环境变量 | 从终端启动面板，或在面板 **设置 → API** 里重新保存一次配置（推荐） |
+| 想自己维护配置、不把密钥交给面板 | 手动编辑 `~/.claude/settings.json` 的 `env` 块，面板只读取并显示掩码 |
+| 想从源码运行 | Node.js 24+，`npm ci`，然后 `npm run dev` 或 `npm run package` |
+
+---
+
+## 3. 使用打包版（推荐）
+
+打包版位于仓库的：
+
+```text
+release/linux-unpacked/3pi-desk
+```
+
+如果已经按 README 的桌面集成安装过，也可以在应用菜单搜索 **3PI Desk for Claude Code**，或直接运行：
+
+```bash
+3pi-desk
+```
+
+首次使用：
+
+1. 打开 **设置 → API**。
+2. 选择供应商预设，或选择 **自定义 / 其他**。
+3. 填写：
+   - **Base URL**：供应商的 Anthropic 兼容 API 根地址；
+   - **Token**：你的 API Key；
+   - **模型**：从列表选择，或手动输入模型 ID。
+4. 点击 **测试连接**。成功后再点保存。
+5. 关闭设置，点击侧边栏的工作区卡片，添加项目文件夹。
+6. 选择模型和思考强度，发送消息。
+
+验证是否正常：
+
+- **设置 → 关于** 里应能看到 Claude Code CLI 的版本号；
+- **设置 → API** 里的 Token 只显示前 8 位和后 4 位的掩码；
+- 发送一条简单消息，能收到流式回复。
+
+> 打包版不需要系统里存在 `claude` 命令，也不需要先运行 Claude Code 的登录流程。
+
+---
+
+## 4. 从源码运行或构建
+
+要求：Node.js 24+、npm 11+、Linux（当前主要验证 Ubuntu 24.04 / GNOME）。
+
+```bash
+cd /path/to/3pi-desk-for-claude-code
+npm ci
+npm run dev          # 开发模式
+# 或
+npm run typecheck
+npm run build
+npm run package      # 输出 release/linux-unpacked/3pi-desk
+```
+
+`npm ci` 会自动安装：
+
+- `@anthropic-ai/claude-agent-sdk`
+- 平台包 `@anthropic-ai/claude-agent-sdk-linux-x64`（约 314 MB，内含 `claude` 二进制）
+
+因此源码版同样不需要全局安装 Claude Code CLI。
+
+注意：
+
+- 不同平台需要对应的平台包（如 `...-darwin-arm64`）。当前项目只针对 Linux 打包。
+- 如果打包后出现 `spawn ENOTDIR`，说明 `asarUnpack` 或 `resolveClaudeExecutable()` 的
+  `app.asar.unpacked` 路径修复被破坏了，请保留现有实现。
+
+---
+
+## 5. 已经安装 Claude Code CLI 的用户
+
+可以放心直接使用，两者不会冲突：
+
+- **不会互相覆盖二进制**：面板使用自己打包的 CLI，不修改你的全局 `claude`。
+- **共享配置和聊天**：面板读取 `~/.claude/settings.json`、`~/.claude.json` 和
+  `~/.claude/projects/**`，你已有的会话会出现在对应工作区。
+- **版本可能不同**：面板的 CLI 版本跟随安装的 SDK；全局 `claude` 升级不会升级面板内置版本。
+  需要更新时重新构建或重新安装应用。
+- **认证信息**：面板从 `~/.claude/settings.json` 的 `env` 读取 `ANTHROPIC_AUTH_TOKEN` 或
+  `ANTHROPIC_API_KEY`，只把掩码传给界面。
+
+### 关于 shell 环境变量
+
+很多第三方 API 教程会让你在 `.bashrc` / `.zshrc` 里写：
+
+```bash
+export ANTHROPIC_BASE_URL="https://example.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="sk-..."
+export ANTHROPIC_MODEL="some-model"
+```
+
+从桌面菜单启动的应用**通常不会继承**这些变量。推荐做法是二选一：
+
+1. 在面板 **设置 → API** 里填一次并保存（面板会写入 `~/.claude/settings.json`）；
+2. 或手动把同样的键写进 `~/.claude/settings.json` 的 `env` 块（见下一节）。
+
+如果确实要从终端启动：
+
+```bash
+source ~/.bashrc
+3pi-desk
+```
+
+### 自定义配置目录
+
+面板支持 `CLAUDE_CONFIG_DIR` 环境变量。如果你把 Claude Code 配置放在非默认目录，启动面板时带上该变量即可。
+
+---
+
+## 6. 第三方 API 配置详解
+
+### 6.1 用面板配置（推荐）
+
+**设置 → API** 保存时，面板会合并写入 `~/.claude/settings.json` 的 `env` 块（不会删除其他配置）：
+
+| 键 | 写入内容 |
+| --- | --- |
+| `ANTHROPIC_BASE_URL` | 你填写的 Base URL |
+| `ANTHROPIC_AUTH_TOKEN` | Bearer 认证模式下的 Token |
+| `ANTHROPIC_API_KEY` | API Key 认证模式下的 Token |
+| `ANTHROPIC_MODEL` | 选中的模型 |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | 同一个模型 |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | 同一个模型 |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | 同一个模型 |
+
+把三个默认模型都指向同一个模型，是为了避免第三方网关没有 `opus` / `sonnet` / `haiku`
+对应模型时出现“模型不存在”的错误。
+
+面板会根据供应商预设选择认证模式：
+
+- Anthropic 官方：`ANTHROPIC_API_KEY`（`x-api-key`）；
+- 大多数第三方网关：`ANTHROPIC_AUTH_TOKEN`（`Authorization: Bearer`）。
+
+如果测试连接失败，优先检查是不是认证模式选错了。
+
+### 6.2 Base URL 规则
+
+Base URL 要写到 API 根，**不要**包含 `/v1/messages`：
+
+| 供应商 | Base URL 示例 |
+| --- | --- |
+| OpenCode Go（默认） | `https://opencode.ai/inference/go/anthropic` |
+| Anthropic | `https://api.anthropic.com` |
+| Z.ai (GLM) | `https://api.z.ai/api/anthropic` |
+| Moonshot (Kimi) | `https://api.moonshot.ai/anthropic` |
+| DeepSeek | `https://api.deepseek.com/anthropic` |
+| MiniMax | `https://api.minimax.io/anthropic` |
+| Ollama（本地） | `http://localhost:11434`，且需要提供 Anthropic 兼容接口 |
+| 自定义 | 你的网关地址 |
+
+### 6.3 手动配置（不想把密钥交给面板时）
+
+直接用编辑器修改 `~/.claude/settings.json`：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-gateway.example.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-your-token",
+    "ANTHROPIC_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "your-model-id"
+  }
+}
+```
+
+如果是 Anthropic 官方 API，把 `ANTHROPIC_AUTH_TOKEN` 换成 `ANTHROPIC_API_KEY`。
+
+建议收紧权限：
+
+```bash
+chmod 600 ~/.claude/settings.json
+```
+
+保存后重启面板。**设置 → API** 会显示 Base URL、模型和 Token 掩码；你不需要在面板里重新输入密钥。
+
+### 6.4 模型与上下文窗口
+
+- 供应商能列出模型时，面板会显示模型列表；
+- 供应商不列出、或列表里没有你的模型时，在 **设置 → API** 里手动添加自定义模型；
+- 自定义模型可以填写 **上下文窗口**。面板会把它注入为 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`，
+  否则 Claude Code 对不认识的模型可能按 200k 处理；
+- 切换上下文窗口不同的模型时，会话会自动重启并 `resume`，聊天记录不会丢失。
+
+### 6.5 “测试连接”做了什么
+
+- 尝试读取供应商的模型列表（`/v1/models` 等路径），同时尝试 Bearer 和 `x-api-key`；
+- 已知供应商预设：模型列表成功即视为连接成功；
+- 自定义 URL：还会额外发一个最小的 `POST /v1/messages` 探测，避免“只支持 OpenAI 格式、
+  顺便列了模型”的端点被误判为可用；
+- 如果供应商没有模型列表，则用当前模型做探测。
+
+### 6.6 密钥存放位置
+
+| 内容 | 位置 | 权限 |
+| --- | --- | --- |
+| Claude Code 使用的 API 配置 | `~/.claude/settings.json` | 写入时 `0600` |
+| 面板保存的 API 配置档案（含 Token） | `~/.config/claude-desk/settings.json` | 写入时 `0600` |
+| 删除聊天前的备份 | `~/.config/claude-desk/session-backups/` | — |
+
+面板不会把密钥上传到作者服务器；渲染进程只收到掩码。请不要把上述文件提交到 Git。
+
+---
+
+## 7. 常见问题
+
+### 401 / 403
+
+- 认证模式不对：第三方网关通常用 `ANTHROPIC_AUTH_TOKEN`，Anthropic 官方用 `ANTHROPIC_API_KEY`；
+- Token 过期、额度不足，或复制时带了空格/换行；
+- 重跑 **测试连接**，看返回的具体状态码。
+
+### 404 / 连接成功但聊天失败
+
+- Base URL 多写了 `/v1/messages`，或少了供应商要求的路径段；
+- 端点只兼容 OpenAI 格式，不兼容 Anthropic Messages API；
+- 代理/DNS 问题：用 `curl` 直接访问 Base URL 验证。
+
+### 模型不存在
+
+- 模型 ID 与供应商列表不一致；
+- 第三方网关没有 `opus` / `sonnet` / `haiku`，而某些内置流程仍在请求这些别名。面板已把三个
+  默认模型变量都指向你选的模型；如果仍报错，检查 `~/.claude/settings.json` 是否被其他工具覆盖。
+
+### 上下文长度显示只有 200k
+
+- 该模型是自定义模型，但没有填写上下文窗口；
+- 在 **设置 → API** 的自定义模型里补上正确的上下文长度，然后重新开始会话。
+
+### 插件安装卡住
+
+- 在插件市场的横幅上点 **取消**；
+- 安装命令以关闭 stdin 的方式运行，正常情况下不会等待确认；如果系统里的 CLI 仍要求确认，
+  先在终端完成一次交互，再回到面板操作。
+
+### 窗口空白 / 更新后打不开
+
+- 彻底退出所有面板进程后重新启动；
+- 打包版是原生 Electron 构建，更新后必须重启。
+
+### 其他已知限制
+
+- 云端会话和 Anthropic 账号用量接口需要 Anthropic 账号，第三方供应商下不可用；
+- 全局快捷键在 Wayland 下可能无效；
+- PDF 输入取决于模型/网关是否支持；
+- 英文界面由运行时翻译提供，少量动态文本可能仍是中文。
+
+---
+
+## 8. 验证清单
+
+- [ ] **设置 → 关于** 显示 Claude Code CLI 版本号，而不是 `not found`；
+- [ ] **设置 → API** 显示 Base URL、模型和 Token 掩码；
+- [ ] **测试连接** 成功；
+- [ ] 发送一条消息能收到流式回复；
+- [ ] 权限请求显示在输入框上方，没有全屏遮罩；
+- [ ] 重启应用后，工作区和聊天列表仍在；
+- [ ] 删除聊天后，`~/.config/claude-desk/session-backups/` 出现备份。
+
+---
+
+## 9. 回滚与卸载
+
+面板数据：
+
+```bash
+rm -rf ~/.config/claude-desk
+```
+
+桌面集成（如果安装过）：
+
+```bash
+rm -f ~/.local/share/applications/3pi-desk.desktop
+rm -f ~/桌面/3pi-desk.desktop
+rm -f ~/.local/share/icons/hicolor/512x512/apps/3pi-desk.png
+rm -f ~/.local/bin/3pi-desk
+update-desktop-database ~/.local/share/applications
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+```
+
+**不要**删除 `~/.claude/`，除非你确定要删除 Claude Code 的配置和全部聊天记录。面板本身不会自动
+删除聊天；通过 UI 删除时会先备份到 `~/.config/claude-desk/session-backups/`。
