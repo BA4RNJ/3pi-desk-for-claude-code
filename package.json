@@ -6,17 +6,26 @@
   "author": "BA4RNJ",
   "license": "MIT",
   "private": true,
+  "desktopName": "3pi-desk",
+  "engines": {
+    "node": ">=24"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/BA4RNJ/3pi-desk-for-claude-code.git"
   },
+  "bugs": {
+    "url": "https://github.com/BA4RNJ/3pi-desk-for-claude-code/issues"
+  },
+  "homepage": "https://github.com/BA4RNJ/3pi-desk-for-claude-code#readme",
   "scripts": {
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "package": "npm run build && electron-builder --linux dir",
-    "dist": "npm run build && electron-builder --linux AppImage"
+    "dist": "npm run build && electron-builder --linux AppImage deb"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.316",

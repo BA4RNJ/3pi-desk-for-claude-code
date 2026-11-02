@@ -24,6 +24,14 @@ import type {
   SlashCommandInfo,
   TurnStats
 } from '../shared/types'
+import { SUPPORTED_IMAGE_MEDIA_TYPES, isSvgFile } from '../shared/attachments'
+
+/**
+ * Monotonic across SessionManager instances: if a manager is recreated for the
+ * same tab, its revisions must still be greater than the ones the renderer has
+ * already applied.
+ */
+let nextStateRevision = 0
 
 export interface StartOptions extends SessionStartOptions {
   extraArgs?: Record<string, string | null>
@@ -125,6 +133,13 @@ export class SessionManager {
   private queue: AsyncQueue<SDKUserMessage> | null = null
   private abort: AbortController | null = null
   private generation = 0
+  private stateRevision = 0
+  /**
+   * Number of user turns sent to the CLI and not yet answered by a `result`.
+   * A delayed result from an earlier turn must not clear `running` while a
+   * later turn is still streaming.
+   */
+  private pendingTurns = 0
   private pending = new Map<string, PendingPermission>()
   private lastExtras: Pick<
     StartOptions,
@@ -150,6 +165,7 @@ export class SessionManager {
   getState(): SessionState {
     return {
       ...this.state,
+      revision: this.stateRevision,
       stats: this.state.stats ? { ...this.state.stats } : undefined,
       context: this.state.context ? { ...this.state.context } : undefined
     }
@@ -167,6 +183,7 @@ export class SessionManager {
       allowedTools: options.allowedTools,
       disallowedTools: options.disallowedTools
     }
+    this.pendingTurns = 0
     this.state = {
       running: false,
       connecting: true,
@@ -254,6 +271,20 @@ export class SessionManager {
     if (trimmed) content.push({ type: 'text', text: trimmed })
     for (const attachment of attachments) {
       if (attachment.kind === 'image') {
+        if (!SUPPORTED_IMAGE_MEDIA_TYPES.has(attachment.mediaType)) {
+          // Older clients may still send SVG/BMP/TIFF as image blocks. The API
+          // rejects those media types, so keep the request usable instead.
+          const text = isSvgFile(attachment.name, attachment.mediaType)
+            ? Buffer.from(attachment.data, 'base64').toString('utf8')
+            : ''
+          content.push({
+            type: 'text',
+            text: text
+              ? `\n\n[Attachment: ${attachment.name}]\n${text}`
+              : `\n\n[Attachment: ${attachment.name}] (unsupported image format)`
+          })
+          continue
+        }
         content.push({
           type: 'image',
           source: {
@@ -279,6 +310,7 @@ export class SessionManager {
       }
     }
 
+    this.pendingTurns += 1
     this.state.running = true
     this.state.error = undefined
     this.emitState()
@@ -482,6 +514,7 @@ export class SessionManager {
       // ignore
     }
 
+    this.pendingTurns = 0
     this.state.running = false
     this.state.connecting = false
     this.emitState()
@@ -495,12 +528,14 @@ export class SessionManager {
       }
     } catch (error) {
       if (generation !== this.generation) return
+      this.pendingTurns = 0
       this.state.connecting = false
       this.state.running = false
       this.state.error = errorMessage(error)
       this.emitState()
     } finally {
       if (generation === this.generation) {
+        this.pendingTurns = 0
         this.state.connecting = false
         this.state.running = false
         this.emitState()
@@ -523,7 +558,10 @@ export class SessionManager {
     }
 
     if (message.type === 'result') {
-      this.state.running = false
+      // A result completes one queued user turn. If another turn is still
+      // pending, keep `running` true so the stop button does not disappear.
+      this.pendingTurns = Math.max(0, this.pendingTurns - 1)
+      this.state.running = this.pendingTurns > 0
       this.state.connecting = false
       const usage = message.subtype === 'success' ? message.usage : undefined
       const stats: TurnStats = {
@@ -633,6 +671,8 @@ export class SessionManager {
   }
 
   private emitState(): void {
+    nextStateRevision += 1
+    this.stateRevision = nextStateRevision
     this.callbacks.emitState(this.getState())
   }
 }

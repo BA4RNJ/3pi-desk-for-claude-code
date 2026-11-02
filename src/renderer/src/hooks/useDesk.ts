@@ -5,6 +5,7 @@ import type {
   AppDefaults,
   AppPreferences,
   Attachment,
+  ChatSettingsSnapshot,
   CustomModel,
   DesktopEvent,
   EffortSetting,
@@ -20,6 +21,7 @@ import type {
   SettingsSnapshot,
   TestApiResult
 } from '../../../shared/types'
+import { isNewerState, stateRevision } from '../../../shared/sessionState'
 import type {
   TabRuntimeData,
   TabTask,
@@ -252,6 +254,9 @@ export function useDesk() {
   const settingsRef = useRef<SettingsSnapshot | null>(null)
   const modelsRef = useRef<ModelOption[]>(FALLBACK_MODELS)
   const publishTimers = useRef(new Map<string, number>())
+  const stateRevisions = useRef(new Map<string, number>())
+  const startingTabs = useRef(new Set<string>())
+  const chatSettingsQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     const root = document.documentElement
@@ -275,6 +280,17 @@ export function useDesk() {
     localStorage.setItem('claude-desk-theme', theme)
     return () => media.removeEventListener('change', apply)
   }, [theme])
+
+  const applyState = useCallback((tab: TabRuntimeData, state: SessionState): boolean => {
+    const previous = stateRevisions.current.get(tab.id)
+    if (!isNewerState(previous, state)) return false
+    const revision = stateRevision(state)
+    if (revision !== undefined) stateRevisions.current.set(tab.id, revision)
+    tab.state = state
+    tab.sessionId = state.sessionId || tab.sessionId
+    tab.effort = state.effort
+    return true
+  }, [])
 
   const publish = useCallback((tab: TabRuntimeData) => {
     setTabs((previous) => ({ ...previous, [tab.id]: toView(tab) }))
@@ -347,6 +363,64 @@ export function useDesk() {
     []
   )
 
+  const applyLastChatSettings = useCallback((tab: TabRuntimeData) => {
+    const last = settingsRef.current?.preferences.lastChatSettings
+    if (!last) return
+    if (last.model) tab.state.model = last.model
+    if (last.effort) {
+      tab.effort = last.effort
+      tab.state.effort = last.effort
+    }
+    if (last.permissionMode) tab.state.permissionMode = last.permissionMode
+  }, [])
+
+  const persistChatSettings = useCallback(
+    async (tab: TabRuntimeData, patch: Partial<ChatSettingsSnapshot>) => {
+      const run = async (): Promise<void> => {
+        const current = settingsRef.current
+        if (!current) return
+        const now = Date.now()
+        const lastChatSettings = {
+          ...(current.preferences.lastChatSettings || {}),
+          ...patch,
+          updatedAt: now
+        }
+        let chatSettings = current.preferences.chatSettings || {}
+        if (tab.sessionId) {
+          chatSettings = {
+            ...chatSettings,
+            [tab.sessionId]: {
+              ...(chatSettings[tab.sessionId] || {}),
+              ...patch,
+              updatedAt: now
+            }
+          }
+          // Keep the preferences file bounded.
+          chatSettings = Object.fromEntries(
+            Object.entries(chatSettings)
+              .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+              .slice(0, 100)
+          )
+        }
+        try {
+          const preferences = await window.desk.savePreferences({
+            chatSettings,
+            lastChatSettings
+          })
+          const updated = { ...current, preferences }
+          settingsRef.current = updated
+          setSettings(updated)
+        } catch {
+          // Best effort: chat settings must not break the conversation.
+        }
+      }
+      const next = chatSettingsQueue.current.then(run, run)
+      chatSettingsQueue.current = next.catch(() => undefined)
+      await next
+    },
+    []
+  )
+
   const addTab = useCallback(
     (options?: {
       cwd?: string
@@ -358,6 +432,7 @@ export function useDesk() {
       const targetCwd = options?.cwd || cwdRef.current || defaults?.cwd || ''
       const model = settingsRef.current?.api.model || modelsRef.current[0]?.id || 'deepseek-v4.1-flash'
       const tab = emptyTab(id, targetCwd, model, options?.sessionId, options?.title)
+      applyLastChatSettings(tab)
       tabsRef.current.set(id, tab)
       tabOrderRef.current = [...tabOrderRef.current, id]
       setTabOrder(tabOrderRef.current)
@@ -366,7 +441,7 @@ export function useDesk() {
       void rememberWorkspace(targetCwd)
       return id
     },
-    [activateTab, defaults?.cwd, publish, rememberWorkspace]
+    [activateTab, applyLastChatSettings, defaults?.cwd, publish, rememberWorkspace]
   )
 
   const closeTab = useCallback(
@@ -375,6 +450,8 @@ export function useDesk() {
       if (!tab) return
       void window.desk.stopSession(id).catch(() => undefined)
       tabsRef.current.delete(id)
+      stateRevisions.current.delete(id)
+      startingTabs.current.delete(id)
       const order = tabOrderRef.current.filter((item) => item !== id)
       tabOrderRef.current = order
       setTabOrder(order)
@@ -433,10 +510,7 @@ export function useDesk() {
     const offState = window.desk.onState(({ tabId, state }) => {
       const tab = tabsRef.current.get(tabId)
       if (!tab) return
-      tab.state = state
-      tab.sessionId = state.sessionId || tab.sessionId
-      tab.effort = state.effort
-      tab.state.model = state.model
+      if (!applyState(tab, state)) return
       if (tabId === activeTabIdRef.current) {
         cwdRef.current = state.cwd || tab.cwd
         setCwd(state.cwd || tab.cwd)
@@ -489,6 +563,16 @@ export function useDesk() {
           permissionMode: message.permissionMode || tab.state.permissionMode
         }
         tab.sessionId = message.session_id || tab.sessionId
+        if (
+          tab.sessionId &&
+          !settingsRef.current?.preferences.chatSettings?.[tab.sessionId]
+        ) {
+          void persistChatSettings(tab, {
+            model: tab.state.model,
+            effort: tab.effort,
+            permissionMode: tab.state.permissionMode
+          })
+        }
         publish(tab)
         void refreshCommands(tab)
         return
@@ -575,7 +659,15 @@ export function useDesk() {
       for (const timer of publishTimers.current.values()) window.clearTimeout(timer)
       publishTimers.current.clear()
     }
-  }, [publish, refreshCommands, refreshSessions, schedulePublish, updateTitleFromMessages])
+  }, [
+    applyState,
+    persistChatSettings,
+    publish,
+    refreshCommands,
+    refreshSessions,
+    schedulePublish,
+    updateTitleFromMessages
+  ])
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -622,6 +714,7 @@ export function useDesk() {
         const model = effectiveSettings.api.model || nextModels[0]?.id || 'deepseek-v4.1-flash'
         const id = newId()
         const tab = emptyTab(id, defaultsValue.cwd, model)
+        applyLastChatSettings(tab)
         tabsRef.current.set(id, tab)
         tabOrderRef.current = [id]
         setTabOrder([id])
@@ -644,7 +737,7 @@ export function useDesk() {
     return () => {
       disposed = true
     }
-  }, [activateTab, publish, pushNotice])
+  }, [activateTab, applyLastChatSettings, publish, pushNotice])
 
   const ensureSession = useCallback(async (tab: TabRuntimeData) => {
     if (tab.started) return
@@ -658,27 +751,40 @@ export function useDesk() {
     const state = await window.desk.startSession(tab.id, options)
     tab.started = true
     tab.sessionId = state.sessionId || tab.sessionId
-    tab.state = { ...tab.state, ...state }
+    applyState(tab, state)
+    if (tab.sessionId && !settingsRef.current?.preferences.chatSettings?.[tab.sessionId]) {
+      void persistChatSettings(tab, {
+        model: tab.state.model,
+        effort: tab.effort,
+        permissionMode: tab.state.permissionMode
+      })
+    }
     publish(tab)
-  }, [publish])
+  }, [applyState, persistChatSettings, publish])
 
   const sendMessage = useCallback(
     async (text: string, attachments: Attachment[] = []) => {
       if (!booted) return
       const tab = tabsRef.current.get(activeTabIdRef.current)
       if (!tab) return
-      if (tab.state.running) return
+      if (tab.state.running || startingTabs.current.has(tab.id)) return
       const trimmed = text.trim()
       if (!trimmed && attachments.length === 0) return
 
+      startingTabs.current.add(tab.id)
       try {
         await ensureSession(tab)
       } catch (error) {
         pushNotice(tab, `无法启动会话：${errorText(error)}`, 'error')
         return
+      } finally {
+        startingTabs.current.delete(tab.id)
       }
 
       const turnId = newId()
+      // Show the stop control immediately; the authoritative state snapshot
+      // follows from the main process.
+      tab.state = { ...tab.state, running: true, error: undefined }
       tab.messages.push({
         id: turnId,
         role: 'user',
@@ -698,10 +804,12 @@ export function useDesk() {
           uuid: turnId
         })
       } catch (error) {
+        tab.state = { ...tab.state, running: false }
+        publish(tab)
         pushNotice(tab, `发送失败：${errorText(error)}`, 'error')
       }
     },
-    [booted, ensureSession, pushNotice, schedulePublish, updateTitleFromMessages]
+    [booted, ensureSession, publish, pushNotice, schedulePublish, updateTitleFromMessages]
   )
 
   const stop = useCallback(async () => {
@@ -754,6 +862,20 @@ export function useDesk() {
       })
       const tab = tabsRef.current.get(id)
       if (!tab) return
+      const saved =
+        settingsRef.current?.preferences.chatSettings?.[sessionId] ||
+        settingsRef.current?.preferences.lastChatSettings ||
+        {}
+      const savedModel = saved.model || tab.state.model
+      const savedEffort = saved.effort || tab.effort
+      const savedPermission = saved.permissionMode || tab.state.permissionMode
+      tab.state = {
+        ...tab.state,
+        model: savedModel,
+        effort: savedEffort,
+        permissionMode: savedPermission
+      }
+      tab.effort = savedEffort
       tab.loadingHistory = true
       publish(tab)
 
@@ -764,14 +886,21 @@ export function useDesk() {
         updateTitleFromMessages(tab)
         const state = await window.desk.startSession(tab.id, {
           cwd: tab.cwd,
-          model: tab.state.model,
-          permissionMode: tab.state.permissionMode,
-          effort: tab.effort,
+          model: savedModel,
+          permissionMode: savedPermission,
+          effort: savedEffort,
           resume: sessionId
         })
         tab.started = true
         tab.sessionId = state.sessionId || sessionId
-        tab.state = { ...tab.state, ...state }
+        applyState(tab, state)
+        if (!settingsRef.current?.preferences.chatSettings?.[sessionId]) {
+          void persistChatSettings(tab, {
+            model: savedModel,
+            effort: savedEffort,
+            permissionMode: savedPermission
+          })
+        }
       } catch (error) {
         pushNotice(tab, `恢复会话失败：${errorText(error)}`, 'error')
       } finally {
@@ -780,7 +909,16 @@ export function useDesk() {
         void refreshSessions(tab.cwd)
       }
     },
-    [activateTab, addTab, publish, pushNotice, refreshSessions, updateTitleFromMessages]
+    [
+      activateTab,
+      addTab,
+      applyState,
+      persistChatSettings,
+      publish,
+      pushNotice,
+      refreshSessions,
+      updateTitleFromMessages
+    ]
   )
 
   const renameSession = useCallback(
@@ -1023,18 +1161,19 @@ export function useDesk() {
       tab.state = { ...tab.state, model }
       publish(tab)
       if (!tab.started) {
-        modelsRef.current = modelsRef.current
+        void persistChatSettings(tab, { model })
         return
       }
       try {
         await window.desk.setModel(tab.id, model)
+        void persistChatSettings(tab, { model })
       } catch (error) {
         tab.state = { ...tab.state, model: previous }
         publish(tab)
         pushNotice(tab, `切换模型失败：${errorText(error)}`, 'error')
       }
     },
-    [publish, pushNotice]
+    [persistChatSettings, publish, pushNotice]
   )
 
   const setPermissionMode = useCallback(
@@ -1044,16 +1183,20 @@ export function useDesk() {
       const previous = tab.state.permissionMode
       tab.state = { ...tab.state, permissionMode: mode }
       publish(tab)
-      if (!tab.started) return
+      if (!tab.started) {
+        void persistChatSettings(tab, { permissionMode: mode })
+        return
+      }
       try {
         await window.desk.setPermissionMode(tab.id, mode)
+        void persistChatSettings(tab, { permissionMode: mode })
       } catch (error) {
         tab.state = { ...tab.state, permissionMode: previous }
         publish(tab)
         pushNotice(tab, `切换权限模式失败：${errorText(error)}`, 'error')
       }
     },
-    [publish, pushNotice]
+    [persistChatSettings, publish, pushNotice]
   )
 
   const setEffort = useCallback(
@@ -1064,9 +1207,13 @@ export function useDesk() {
       tab.effort = effort
       tab.state = { ...tab.state, effort }
       publish(tab)
-      if (!tab.started) return
+      if (!tab.started) {
+        void persistChatSettings(tab, { effort })
+        return
+      }
       try {
         await window.desk.setEffort(tab.id, effort)
+        void persistChatSettings(tab, { effort })
       } catch (error) {
         tab.effort = previous
         tab.state = { ...tab.state, effort: previous }
@@ -1074,7 +1221,7 @@ export function useDesk() {
         pushNotice(tab, `切换思考强度失败：${errorText(error)}`, 'error')
       }
     },
-    [publish, pushNotice]
+    [persistChatSettings, publish, pushNotice]
   )
 
   const previewRewind = useCallback(
@@ -1126,7 +1273,9 @@ export function useDesk() {
               fontScale: 1,
               accent: 'coral' as const,
               compactMode: false,
-              recentWorkspaces: []
+              recentWorkspaces: [],
+              chatSettings: {},
+              lastChatSettings: {}
             },
             permissionRules: { allow: [], ask: [], deny: [] },
             profiles: [],

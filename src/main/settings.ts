@@ -33,7 +33,9 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   fontScale: 1,
   accent: 'coral',
   compactMode: false,
-  recentWorkspaces: []
+  recentWorkspaces: [],
+  chatSettings: {},
+  lastChatSettings: {}
 }
 
 interface ClaudeSettings {

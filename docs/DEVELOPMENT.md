@@ -82,8 +82,10 @@ Key components:
 - `WorkspaceManager.tsx` — recent workspaces window.
 - `TabBar.tsx` — concurrent chat tabs.
 - `Sidebar.tsx` — brand, workspaces, chat search/list/menu, settings.
-- `TopBar.tsx` — model, effort, permission mode, usage, tasks.
-- `ChatView.tsx` / `MessageView.tsx` / `ToolCard.tsx` — transcript rendering.
+- `TopBar.tsx` — title, file panel, usage, tasks, working state.
+- `ComposerControls.tsx` — model, effort, permission mode, and chat view toggles below the composer.
+- `Dropdown.tsx` — shared dropdown used by TopBar and ComposerControls.
+- `ChatView.tsx` / `MessageView.tsx` / `ToolCard.tsx` — transcript rendering, compact/user-only views.
 - `FilePanel.tsx` / `FilePreviewDialog.tsx` — workspace file tree and editor.
 - `SettingsDialog.tsx` — General/API/Permissions/Extensions/Background/Usage/About.
 - `ExtensionsPanel.tsx` — MCP, plugins + marketplace, skills, hooks, agents.
@@ -185,6 +187,12 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
 - `SessionManager` state is pushed via `session:state`; raw SDK messages via `session:event`.
   The renderer reducer (`lib/messages.ts`) handles partials, full assistant frames, tool results,
   tasks, result stats, local command output, and rewind IDs.
+- **State snapshots are revisioned.** `SessionState.revision` is a process-wide monotonic counter;
+  the renderer ignores a snapshot whose revision is not greater than the last applied one. The
+  `session:start` reply and `session:state` events travel over different IPC paths, so an older
+  snapshot can arrive late and reset `running` while the model is streaming. Do not apply state
+  snapshots in the renderer without this check. `SessionManager.pendingTurns` keeps `running`
+  true when a `result` for an earlier queued turn arrives while a later turn is still active.
 - Effort changes restart the manager with `resume` (some models/CLIs do not support live effort).
   The renderer keeps its transcript; only the backend query is recreated.
 - `rewindFiles(userMessageId)` needs `enableFileCheckpointing` and the user message UUID. The UI
@@ -209,6 +217,11 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
 - Titles: "New chat" until a user prompt exists; after a result the session summary from
   Claude Code is used. Tab/topbar titles are marked `data-i18n-skip` when they are real chat
   titles, so the translator does not rewrite user/model text.
+- **Per-conversation settings** live in `AppPreferences.chatSettings` keyed by session id, with
+  `lastChatSettings` as the default for new chats. Model, effort, and permission changes call
+  `persistChatSettings()` (serialized through `chatSettingsQueue` so rapid changes cannot lose
+  updates). `selectSession` restores the saved values before `startSession`; new tabs inherit
+  `lastChatSettings`. Do not add a composer setting without persisting it here.
 
 ### API providers, models, and detection
 
@@ -221,9 +234,12 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   `authMode` (`bearer` for most gateways, `apiKey` for Anthropic). Known presets trust a
   successful model list. Custom URLs are additionally probed with a minimal `POST /v1/messages`
   request, so an OpenAI-only endpoint that lists models is rejected instead of being reported as
-  connected. If no model list exists, the probe validates the current model. The successful auth
-  mode is returned to the UI and saved; `saveApiSettings()` writes either `ANTHROPIC_AUTH_TOKEN`
-  or `ANTHROPIC_API_KEY` accordingly.
+  connected. If no model list exists and no model is entered, known presets try their
+  `suggestedModels` with a short Messages probe and return the first working model as
+  `discoveredModel`; the UI fills it in automatically. The successful auth mode is returned to
+  the UI and saved; `saveApiSettings()` writes either `ANTHROPIC_AUTH_TOKEN` or
+  `ANTHROPIC_API_KEY` accordingly. Custom providers cannot be guessed: the user must supply a
+  model ID if the endpoint has no model list.
 - Custom models are merged into `getModels()` for the active provider only. Their optional
   `contextWindow` feeds `CLAUDE_CODE_MAX_CONTEXT_TOKENS` exactly like a catalog model. Do not
   hardcode a single context window.
@@ -314,9 +330,18 @@ Claude Code owns transcripts. The app must treat them as irreplaceable user data
   views images; binary files are not previewable.
 - Tool file paths can open the preview via `onOpenFile` threaded through
   `ChatView -> MessageView -> ToolCard`.
-- Composer attachments: images, PDF documents, and text files. `fileToAttachment` handles
-  drag/drop/paste in the renderer; `files:pick` reads native files in main. PDFs are sent as
-  Anthropic `document` blocks and depend on the gateway/model.
+- Composer attachments: `src/shared/attachments.ts` is the single source of truth for accepted
+  formats and text decoding. Images (PNG/JPEG/GIF/WebP) become image blocks, PDF becomes a
+  document block, and everything text-like (including SVG source, code, CSV, XML, logs) becomes a
+  text attachment. Unsupported binaries and oversized files are returned as
+  `{ name, reason }` errors and shown in the attachment box instead of being dropped silently.
+  `fileToAttachment` handles drag/drop/paste in the renderer; `files:pick` reads native files in
+  main and returns `{ attachments, errors }`. Text decoding supports UTF-8, UTF-16 with BOM, and
+  GB18030 fallback; a NUL byte in the first 8 KB marks a file as binary.
+- Chat view state (`detail` / `compact` and `userOnly`) lives in `App.tsx`. `ChatView` renders a
+  user-message outline in user-only mode; clicking an item switches back to the full transcript
+  and scrolls to `[data-message-id]` while `atBottom` is false, so new replies do not force a
+  jump back to the bottom.
 - Tool-result images are extracted in `applyUserMessage` into `ToolBlock.images` and rendered in
   `ToolCard`.
 
@@ -357,6 +382,9 @@ the source UI is Chinese and the product must default to English.
     aria-label/alt`, and installs a `MutationObserver` for dynamic React updates. Form controls
     (`input/textarea/select`) are skipped for text content but their attributes are still
     translated, so settings placeholders and the composer placeholder follow the language.
+  - Added-node walks are batched in a `requestAnimationFrame` (`enqueueWalk`/`flushAddedNodes`)
+    and skipped entirely in Chinese mode. Walking every added subtree synchronously made the
+    Settings dialog janky; keep the batching when changing the observer.
   - Provider and model names are intentionally English; provider descriptions are translated.
     Keep UI copy provider-neutral (avoid assuming a Claude model or one gateway).
   - `setI18nLanguage(lang)` switches live; originals are kept so Chinese can be restored.
@@ -393,6 +421,9 @@ the source UI is Chinese and the product must default to English.
 - Ubuntu-specific: main calls `app.disableHardwareAcceleration()` and
   `app.commandLine.appendSwitch('disable-gpu-sandbox')`; without them Electron can crash on this
   machine's sandbox/GPU setup. Keep unless the environment changes.
+- Because hardware acceleration is disabled, **avoid `backdrop-filter` on large surfaces**. The
+  full-screen Settings backdrop and the topbar previously used `blur()`, which made the Settings
+  dialog feel very laggy; both were removed. Use a translucent solid background instead.
 
 ## 15. Build, run, and test
 

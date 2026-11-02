@@ -323,3 +323,327 @@ gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
 
 **不要**删除 `~/.claude/`，除非你确定要删除 Claude Code 的配置和全部聊天记录。面板本身不会自动
 删除聊天；通过 UI 删除时会先备份到 `~/.config/claude-desk/session-backups/`。
+
+---
+
+# English
+
+This tutorial covers two groups of users:
+
+- **Users who have never installed Claude Code** and only want this panel plus a third-party API.
+- **Users who already have the Claude Code CLI** and want to keep their configuration and chats.
+
+Short version: **neither group needs to install a global `claude` command.** The panel bundles
+the Claude Code CLI.
+
+## 1. How the panel relates to Claude Code
+
+```text
+3PI Desk (Electron UI)
+        │
+        ▼
+Claude Agent SDK (official SDK)
+        │  bundles and starts
+        ▼
+Claude Code CLI (the claude binary shipped with the app)
+        │
+        ▼
+ANTHROPIC_BASE_URL (third-party Anthropic-compatible API)
+```
+
+- Sessions, tool calls, permissions, and checkpoints are executed by the **Claude Code CLI**; the
+  panel only provides the UI and configuration.
+- `resolveClaudeExecutable()` in `src/main/session.ts` resolves the SDK's own
+  `@anthropic-ai/claude-agent-sdk-<platform>-<arch>/claude` binary and **never** invokes a global
+  `claude` command.
+- The panel and the CLI share `~/.claude/`: `settings.json`, `~/.claude.json`, MCP configuration,
+  skills, agents, hooks, and the chat transcripts under `~/.claude/projects/**`.
+
+## 2. Which user are you?
+
+| Your situation | What to do |
+| --- | --- |
+| Never installed Claude Code | Use the packaged build or build from source; no `npm i -g @anthropic-ai/claude-code` required |
+| Installed Claude Code and configured a third-party API in the CLI | Run the app; it reads `~/.claude/settings.json` and shows your existing chats |
+| Installed Claude Code but only exported variables in `.bashrc` / `.zshrc` | Launch from a terminal, or save the configuration once in Settings → API (recommended) |
+| Want to keep keys outside the panel | Edit the `env` block of `~/.claude/settings.json`; the panel reads it and shows only a mask |
+| Want to build from source | Node.js 24+, `npm ci`, then `npm run dev` or `npm run package` |
+
+## 3. Packaged app (recommended)
+
+The unpacked build is at:
+
+```text
+release/linux-unpacked/3pi-desk
+```
+
+If desktop integration is installed, search for **3PI Desk for Claude Code** in the application
+menu, or run:
+
+```bash
+3pi-desk
+```
+
+First run:
+
+1. Open **Settings → API**.
+2. Choose a provider preset, or **Custom / Other**.
+3. Enter the **Base URL**, **Token**, and **model**.
+4. Click **Test & fetch models**. Save after it succeeds.
+5. Close Settings, click the workspace card, and add a project folder.
+6. Pick a model and effort level below the composer, then send a message.
+
+Verification:
+
+- **Settings → About** shows the Claude Code CLI version, not `not found`.
+- **Settings → API** shows the Base URL, model, and a masked token.
+- A simple message receives a streaming reply.
+
+> The packaged app does not need a global `claude` command or a prior Claude Code login.
+
+## 4. Run or build from source
+
+Requirements: Node.js 24+, npm 11+, Linux (Ubuntu 24.04 / GNOME is the main tested environment).
+
+```bash
+cd /path/to/3pi-desk-for-claude-code
+npm ci
+npm run dev          # development
+# or
+npm run typecheck
+npm run build
+npm run package      # outputs release/linux-unpacked/3pi-desk
+```
+
+`npm ci` installs:
+
+- `@anthropic-ai/claude-agent-sdk`
+- the platform package `@anthropic-ai/claude-agent-sdk-linux-x64` (~314 MB, containing `claude`)
+
+The source build therefore also does not need a global Claude Code CLI.
+
+Notes:
+
+- Other platforms need their matching platform package (for example `...-darwin-arm64`). This
+  project currently packages for Linux.
+- If the packaged app fails with `spawn ENOTDIR`, the `asarUnpack` setting or the
+  `app.asar.unpacked` path fix in `resolveClaudeExecutable()` is broken. Keep both.
+
+## 5. Already installed Claude Code CLI
+
+The two installations coexist safely:
+
+- **No binary conflict**: the panel uses its own bundled CLI and does not modify the global
+  `claude`.
+- **Shared configuration and chats**: the panel reads `~/.claude/settings.json`, `~/.claude.json`,
+  and `~/.claude/projects/**`; existing sessions appear in the matching workspace.
+- **Versions may differ**: the panel's CLI version follows its SDK. Upgrading the global `claude`
+  does not upgrade the bundled one; rebuild or reinstall the app to update it.
+- **Credentials**: the panel reads `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` from the `env`
+  block of `~/.claude/settings.json` and only sends a mask to the UI.
+
+### Shell environment variables
+
+Many third-party API guides tell you to put this in `.bashrc` / `.zshrc`:
+
+```bash
+export ANTHROPIC_BASE_URL="https://example.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="sk-..."
+export ANTHROPIC_MODEL="some-model"
+```
+
+An app launched from the desktop menu usually **does not inherit** these variables. Choose one:
+
+1. Enter the configuration once in **Settings → API** (the panel writes `~/.claude/settings.json`);
+2. Or write the same keys into the `env` block of `~/.claude/settings.json` (see below).
+
+To launch from a terminal instead:
+
+```bash
+source ~/.bashrc
+3pi-desk
+```
+
+### Custom config directory
+
+The panel honors `CLAUDE_CONFIG_DIR`. If your Claude Code configuration lives elsewhere, start the
+app with that variable set.
+
+## 6. Third-party API configuration
+
+### 6.1 Panel-managed configuration (recommended)
+
+When you save in **Settings → API**, the panel merges these keys into the `env` block of
+`~/.claude/settings.json` without deleting other settings:
+
+| Key | Value |
+| --- | --- |
+| `ANTHROPIC_BASE_URL` | The Base URL you entered |
+| `ANTHROPIC_AUTH_TOKEN` | Token in Bearer mode |
+| `ANTHROPIC_API_KEY` | Token in API-key mode |
+| `ANTHROPIC_MODEL` | The selected model |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | The same model |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | The same model |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | The same model |
+
+Pointing all three default-model aliases at the same model prevents “model not found” errors on
+gateways that do not provide `opus` / `sonnet` / `haiku` equivalents.
+
+The panel selects the auth mode from the provider preset:
+
+- Anthropic official: `ANTHROPIC_API_KEY` (`x-api-key`).
+- Most third-party gateways: `ANTHROPIC_AUTH_TOKEN` (`Authorization: Bearer`).
+
+If the connection test fails, check the auth mode first.
+
+### 6.2 Base URL rules
+
+Use the API root, **not** `/v1/messages`:
+
+| Provider | Example Base URL |
+| --- | --- |
+| OpenCode Go (default) | `https://opencode.ai/inference/go/anthropic` |
+| Anthropic | `https://api.anthropic.com` |
+| Z.ai (GLM) | `https://api.z.ai/api/anthropic` |
+| Moonshot (Kimi) | `https://api.moonshot.ai/anthropic` |
+| DeepSeek | `https://api.deepseek.com/anthropic` |
+| MiniMax | `https://api.minimax.io/anthropic` |
+| Ollama (local) | `http://localhost:11434`, with an Anthropic-compatible endpoint |
+| Custom | Your gateway address |
+
+### 6.3 Manual configuration (keeping the key outside the panel)
+
+Edit `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-gateway.example.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-your-token",
+    "ANTHROPIC_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "your-model-id"
+  }
+}
+```
+
+For the Anthropic official API, replace `ANTHROPIC_AUTH_TOKEN` with `ANTHROPIC_API_KEY`.
+
+Restrict permissions:
+
+```bash
+chmod 600 ~/.claude/settings.json
+```
+
+Restart the panel. **Settings → API** shows the Base URL, model, and token mask; you do not need to
+re-enter the key in the panel.
+
+### 6.4 Models and context window
+
+- If the provider lists models, the panel shows them.
+- If it does not, add a custom model under **Settings → API**.
+- A custom model can include a **context window**. The panel injects it as
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`; otherwise Claude Code may assume 200k for unknown models.
+- Switching to a model with a different context window restarts the session with `resume`; the
+  transcript is preserved.
+
+### 6.5 What the connection test does
+
+- Reads the provider model list (`/v1/models` and alternatives), trying both Bearer and
+  `x-api-key`.
+- Known provider presets: a successful model list is treated as connected.
+- Custom URLs: additionally sends a minimal `POST /v1/messages` probe, so an OpenAI-only endpoint
+  that happens to list models is not reported as connected.
+- If there is no model list, it probes with the current model.
+
+### 6.6 Where keys are stored
+
+| Content | Location | Permissions |
+| --- | --- | --- |
+| API configuration used by Claude Code | `~/.claude/settings.json` | `0600` on write |
+| Panel API profiles (including tokens) | `~/.config/claude-desk/settings.json` | `0600` on write |
+| Chat deletion backups | `~/.config/claude-desk/session-backups/` | — |
+
+The panel does not upload keys to the author; the renderer only receives a mask. Do not commit
+these files to Git.
+
+## 7. FAQ
+
+### 401 / 403
+
+- Wrong auth mode: most gateways use `ANTHROPIC_AUTH_TOKEN`, Anthropic official uses
+  `ANTHROPIC_API_KEY`.
+- Expired token, exhausted quota, or copied whitespace/newlines.
+- Run **Test connection** again and check the status code.
+
+### 404 / connection works but chat fails
+
+- Base URL includes `/v1/messages`, or is missing a provider path segment.
+- The endpoint only supports OpenAI format, not the Anthropic Messages API.
+- Proxy/DNS issue: verify the Base URL with `curl`.
+
+### Model not found
+
+- The model ID does not match the provider list.
+- The gateway lacks `opus` / `sonnet` / `haiku`, while an internal flow still requests an alias.
+  The panel points all three default-model variables at your model; if it still fails, check
+  whether another tool overwrote `~/.claude/settings.json`.
+
+### Context window shows only 200k
+
+- The model is custom and has no context window set.
+- Add the correct context length under custom models in **Settings → API**, then start a new
+  session.
+
+### Plugin install hangs
+
+- Click **Cancel** in the marketplace banner.
+- Installs run with stdin closed; if the system CLI still waits for confirmation, complete one
+  interactive run in a terminal and retry from the panel.
+
+### Blank window / app does not open after an update
+
+- Quit every running instance and relaunch.
+- The packaged app is a native Electron build and must be restarted after an update.
+
+### Other limitations
+
+- Cloud sessions and Anthropic usage/limit APIs require an Anthropic account and are unavailable
+  with third-party providers.
+- The global shortcut may not work under Wayland.
+- PDF input depends on the model/gateway.
+- Some dynamic text may remain Chinese when English is selected (runtime translator).
+
+## 8. Verification checklist
+
+- [ ] **Settings → About** shows a Claude Code CLI version, not `not found`.
+- [ ] **Settings → API** shows the Base URL, model, and token mask.
+- [ ] **Test connection** succeeds.
+- [ ] A message receives a streaming reply.
+- [ ] Permission requests appear above the composer, not as a full-screen overlay.
+- [ ] Workspaces and chats are still present after a restart.
+- [ ] Deleting a chat creates a backup in `~/.config/claude-desk/session-backups/`.
+
+## 9. Rollback and uninstall
+
+Panel data:
+
+```bash
+rm -rf ~/.config/claude-desk
+```
+
+Desktop integration (if installed):
+
+```bash
+rm -f ~/.local/share/applications/3pi-desk.desktop
+rm -f ~/桌面/3pi-desk.desktop
+rm -f ~/.local/share/icons/hicolor/512x512/apps/3pi-desk.png
+rm -f ~/.local/bin/3pi-desk
+update-desktop-database ~/.local/share/applications
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+```
+
+**Do not** delete `~/.claude/` unless you intend to delete Claude Code's configuration and all
+chat history. The panel never deletes chats automatically; UI deletion backs up to
+`~/.config/claude-desk/session-backups/` first.

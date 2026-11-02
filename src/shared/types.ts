@@ -35,6 +35,12 @@ export interface SessionState {
   stats?: TurnStats
   context?: ContextUsage
   error?: string
+  /**
+   * Monotonic revision of this snapshot. The renderer uses it to discard
+   * snapshots that arrive after a newer one (IPC replies and events can be
+   * delivered out of order), which previously cleared `running` mid-turn.
+   */
+  revision?: number
 }
 
 export interface SessionStartOptions {
@@ -66,6 +72,18 @@ export interface AttachmentDocument {
 }
 
 export type Attachment = AttachmentImage | AttachmentText | AttachmentDocument
+
+export type AttachmentFailureReason = 'unsupported' | 'too-large' | 'unreadable' | 'empty'
+
+export interface AttachmentFailure {
+  name: string
+  reason: AttachmentFailureReason
+}
+
+export interface AttachmentPickResult {
+  attachments: Attachment[]
+  errors: AttachmentFailure[]
+}
 
 export interface SendMessagePayload {
   text: string
@@ -200,6 +218,13 @@ export interface CustomModel {
   providerId?: string
 }
 
+export interface ChatSettingsSnapshot {
+  model?: string
+  effort?: EffortSetting
+  permissionMode?: PermissionMode
+  updatedAt?: number
+}
+
 export interface AppPreferences {
   ideIntegration: boolean
   chromeIntegration: boolean
@@ -214,6 +239,10 @@ export interface AppPreferences {
   accent: 'coral' | 'blue' | 'green' | 'purple'
   compactMode: boolean
   recentWorkspaces: string[]
+  /** Per-conversation model/effort/permission, keyed by session id. */
+  chatSettings: Record<string, ChatSettingsSnapshot>
+  /** Last used settings, inherited by new chats. */
+  lastChatSettings: ChatSettingsSnapshot
 }
 
 export interface ApiProfile {
@@ -259,6 +288,8 @@ export interface PreferencesPatch {
   accent?: 'coral' | 'blue' | 'green' | 'purple'
   compactMode?: boolean
   recentWorkspaces?: string[]
+  chatSettings?: Record<string, ChatSettingsSnapshot>
+  lastChatSettings?: ChatSettingsSnapshot
 }
 
 export interface ExtensionTextFile {
@@ -308,6 +339,7 @@ export interface TestApiResult {
   models?: ModelOption[]
   via?: 'models' | 'messages'
   authMode?: ApiAuthMode
+  discoveredModel?: string
   error?: string
 }
 
@@ -441,7 +473,7 @@ export interface DeskApi {
   forkSession(sessionId: string, cwd: string, upToMessageId?: string): Promise<string>
   saveExport(defaultName: string, content: string): Promise<string | null>
   pickDirectory(defaultPath?: string): Promise<string | null>
-  pickFiles(): Promise<Attachment[]>
+  pickFiles(): Promise<AttachmentPickResult>
   getDefaults(): Promise<AppDefaults>
   saveCwd(cwd: string): Promise<void>
   getSettings(): Promise<SettingsSnapshot>

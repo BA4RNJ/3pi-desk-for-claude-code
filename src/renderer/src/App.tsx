@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
-import type { Attachment, SessionInfo } from '../../shared/types'
+import type { Attachment, AttachmentFailure, SessionInfo } from '../../shared/types'
 import type { TodoItem, UserMessage } from './types'
 import { basename } from './lib/format'
 import { fileToAttachment } from './lib/files'
@@ -8,6 +8,7 @@ import { useDesk } from './hooks/useDesk'
 import { findModel } from './lib/usage'
 import { ChatView } from './components/ChatView'
 import { Composer } from './components/Composer'
+import { ComposerControls, type ChatViewMode } from './components/ComposerControls'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { EditMessageDialog } from './components/EditMessageDialog'
 import { FilePanel } from './components/FilePanel'
@@ -18,7 +19,7 @@ import { RenameDialog } from './components/RenameDialog'
 import { RewindDialog } from './components/RewindDialog'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
-import { Starburst } from './components/Starburst'
+import { AppMark } from './components/AppMark'
 import { TabBar } from './components/TabBar'
 import { TagDialog } from './components/TagDialog'
 import { WorkspaceManager } from './components/WorkspaceManager'
@@ -28,6 +29,13 @@ export default function App() {
   const desk = useDesk()
   const activeTab = desk.activeTab
   const [composerAttachments, setComposerAttachments] = useState<Attachment[]>([])
+  const [attachmentError, setAttachmentError] = useState<AttachmentFailure[]>([])
+  const [viewMode, setViewMode] = useState<ChatViewMode>(() =>
+    localStorage.getItem('3pi-chat-view') === 'compact' ? 'compact' : 'detail'
+  )
+  const [userOnly, setUserOnly] = useState(
+    () => localStorage.getItem('3pi-user-only') === 'true'
+  )
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
   const [rewindTarget, setRewindTarget] = useState<string | null>(null)
   const [tagTarget, setTagTarget] = useState<SessionInfo | null>(null)
@@ -54,6 +62,14 @@ export default function App() {
   }, [desk.activeTabId])
 
   useEffect(() => {
+    localStorage.setItem('3pi-chat-view', viewMode)
+  }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem('3pi-user-only', userOnly ? 'true' : 'false')
+  }, [userOnly])
+
+  useEffect(() => {
     document.title = activeTab?.title ? `${activeTab.title} · 3PI Desk` : '3PI Desk'
   }, [activeTab?.title])
 
@@ -76,21 +92,22 @@ export default function App() {
 
   const handleFilesDropped = async (files: File[]): Promise<void> => {
     const next: Attachment[] = []
+    const failures: AttachmentFailure[] = []
     for (const file of files) {
-      const attachment = await fileToAttachment(file)
-      if (attachment) next.push(attachment)
+      const result = await fileToAttachment(file)
+      if (result.attachment) next.push(result.attachment)
+      else failures.push({ name: file.name || '附件', reason: result.reason || 'unreadable' })
     }
     if (next.length > 0) {
       setComposerAttachments((current) => [...current, ...next])
     }
+    setAttachmentError(failures)
   }
 
   if (!desk.booted || !activeTab) {
     return (
       <div className="app-loading">
-        <span className="app-loading-mark">
-          <Starburst size={34} />
-        </span>
+        <AppMark size={66} className="app-loading-mark" />
         <span className="spinner" />
         <p>正在准备 3PI Desk…</p>
       </div>
@@ -169,19 +186,13 @@ export default function App() {
         <TopBar
           title={activeTab.title}
           cwd={activeTab.cwd || desk.cwd}
-          model={activeTab.state.model}
           models={desk.models}
-          effort={activeTab.effort}
-          permissionMode={activeTab.state.permissionMode}
           stats={activeTab.state.stats}
           context={activeTab.state.context}
           usage={activeTab.usage}
           tasks={activeTab.tasks}
           todos={todos}
           running={activeTab.state.running}
-          onModelChange={(model) => void desk.setModel(model)}
-          onPermissionModeChange={(mode) => void desk.setPermissionMode(mode)}
-          onEffortChange={(effort) => void desk.setEffort(effort)}
           onOpenUsage={() => {
             setSettingsTab('usage')
             desk.setSettingsOpen(true)
@@ -208,6 +219,9 @@ export default function App() {
           loadingHistory={activeTab.loadingHistory}
           modelName={activeModelName}
           error={activeTab.state.error}
+          viewMode={viewMode}
+          userOnly={userOnly}
+          onUserOnlyChange={setUserOnly}
           onQuickPrompt={(prompt) => void desk.sendMessage(prompt, [])}
           onChooseFolder={() => setWorkspaceOpen(true)}
           onFilesDropped={(files) => void handleFilesDropped(files)}
@@ -270,20 +284,14 @@ export default function App() {
           )}
           <div className="composer-context">
             <span>{activeTab.cwd ? basename(activeTab.cwd) : '未选择目录'}</span>
-            <span className="dot-separator">·</span>
-            <span>{activeTab.state.model}</span>
-            {activeTab.effort !== 'default' && (
-              <>
-                <span className="dot-separator">·</span>
-                <span>强度 {activeTab.effort}</span>
-              </>
-            )}
           </div>
           <Composer
             running={activeTab.state.running}
             connecting={activeTab.state.connecting || activeTab.loadingHistory}
             attachments={composerAttachments}
             onAttachmentsChange={setComposerAttachments}
+            attachmentError={attachmentError}
+            onAttachmentErrorChange={setAttachmentError}
             onSend={(text, attachments) => {
               void desk.sendMessage(text, attachments)
             }}
@@ -291,6 +299,20 @@ export default function App() {
             onSearchFiles={desk.searchFiles}
             commands={activeTab.commands}
           />
+          <ComposerControls
+            model={activeTab.state.model}
+            models={desk.models}
+            effort={activeTab.effort}
+            permissionMode={activeTab.state.permissionMode}
+            viewMode={viewMode}
+            userOnly={userOnly}
+            onModelChange={(model) => void desk.setModel(model)}
+            onEffortChange={(effort) => void desk.setEffort(effort)}
+            onPermissionModeChange={(mode) => void desk.setPermissionMode(mode)}
+            onViewModeChange={setViewMode}
+            onUserOnlyChange={setUserOnly}
+          />
+          <p className="composer-note">AI 可能会出错，请检查重要操作与代码改动。</p>
         </div>
       </main>
 

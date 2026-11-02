@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react'
 import type { SessionInfo } from '../../../shared/types'
 import type { ThemeMode } from '../types'
 import { basename, relativeTime, truncate } from '../lib/format'
-import { Starburst } from './Starburst'
+import { AppMark } from './AppMark'
 
 interface SidebarProps {
   cwd: string
@@ -137,9 +137,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">
-          <Starburst size={21} />
-        </div>
+        <AppMark size={34} className="brand-mark" />
         <div className="brand-text">
           <strong>3PI Desk</strong>
           <span>AI 编程工作台</span>

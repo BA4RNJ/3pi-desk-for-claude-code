@@ -8,7 +8,13 @@ import {
   type DragEvent,
   type KeyboardEvent
 } from 'react'
-import type { Attachment, FileEntry, SlashCommandInfo } from '../../../shared/types'
+import type {
+  Attachment,
+  AttachmentFailure,
+  FileEntry,
+  SlashCommandInfo
+} from '../../../shared/types'
+import { failureText } from '../../../shared/attachments'
 import { fileToAttachment } from '../lib/files'
 
 interface ComposerProps {
@@ -16,6 +22,8 @@ interface ComposerProps {
   connecting: boolean
   attachments: Attachment[]
   onAttachmentsChange: (attachments: Attachment[]) => void
+  attachmentError: AttachmentFailure[]
+  onAttachmentErrorChange: (errors: AttachmentFailure[]) => void
   onSend: (text: string, attachments: Attachment[]) => void
   onStop: () => void
   onSearchFiles: (query: string) => Promise<FileEntry[]>
@@ -33,6 +41,8 @@ export function Composer({
   connecting,
   attachments,
   onAttachmentsChange,
+  attachmentError,
+  onAttachmentErrorChange,
   onSend,
   onStop,
   onSearchFiles,
@@ -92,11 +102,14 @@ export function Composer({
 
   const addFiles = async (files: FileList | File[]): Promise<void> => {
     const next: Attachment[] = []
+    const failures: AttachmentFailure[] = []
     for (const file of Array.from(files)) {
-      const attachment = await fileToAttachment(file)
-      if (attachment) next.push(attachment)
+      const result = await fileToAttachment(file)
+      if (result.attachment) next.push(result.attachment)
+      else failures.push({ name: file.name || '附件', reason: result.reason || 'unreadable' })
     }
     if (next.length > 0) onAttachmentsChange([...attachments, ...next])
+    onAttachmentErrorChange(failures)
   }
 
   const submit = (): void => {
@@ -105,13 +118,17 @@ export function Composer({
     onSend(text, attachments)
     setValue('')
     onAttachmentsChange([])
+    onAttachmentErrorChange([])
     setMention(null)
     textareaRef.current?.focus()
   }
 
   const pickFiles = async (): Promise<void> => {
     const picked = await window.desk.pickFiles()
-    if (picked.length > 0) onAttachmentsChange([...attachments, ...picked])
+    if (picked.attachments.length > 0) {
+      onAttachmentsChange([...attachments, ...picked.attachments])
+    }
+    onAttachmentErrorChange(picked.errors)
   }
 
   const selectCommand = (command: SlashCommandInfo): void => {
@@ -223,34 +240,48 @@ export function Composer({
 
   return (
     <div className="composer-wrap" onDrop={handleDrop} onDragOver={(event) => event.preventDefault()}>
-      {attachments.length > 0 && (
-        <div className="attachment-strip">
-          {attachments.map((attachment, index) => (
-            <div key={`${attachment.name}-${index}`} className="attachment-chip">
-              {attachment.kind === 'image' ? (
-                <img
-                  className="attachment-thumb"
-                  src={`data:${attachment.mediaType};base64,${attachment.data}`}
-                  alt={attachment.name}
-                />
-              ) : (
-                <span className="attachment-icon">
-                  <FileText size={14} />
-                </span>
-              )}
-              <span className="attachment-name">{attachment.name}</span>
-              <button
-                type="button"
-                className="attachment-remove"
-                aria-label="移除附件"
-                onClick={() =>
-                  onAttachmentsChange(attachments.filter((_, item) => item !== index))
-                }
-              >
-                <X size={11} />
-              </button>
+      {(attachments.length > 0 || attachmentError.length > 0) && (
+        <div className="attachment-box">
+          {attachments.length > 0 && (
+            <div className="attachment-strip">
+              {attachments.map((attachment, index) => (
+                <div key={`${attachment.name}-${index}`} className="attachment-chip">
+                  {attachment.kind === 'image' ? (
+                    <img
+                      className="attachment-thumb"
+                      src={`data:${attachment.mediaType};base64,${attachment.data}`}
+                      alt={attachment.name}
+                    />
+                  ) : (
+                    <span className="attachment-icon">
+                      <FileText size={14} />
+                    </span>
+                  )}
+                  <span className="attachment-name">{attachment.name}</span>
+                  <button
+                    type="button"
+                    className="attachment-remove"
+                    aria-label="移除附件"
+                    onClick={() =>
+                      onAttachmentsChange(attachments.filter((_, item) => item !== index))
+                    }
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {attachmentError.length > 0 && (
+            <div className="attachment-error" role="alert">
+              {attachmentError.map((failure, index) => (
+                <span key={`${failure.name}-${index}`} className="attachment-error-item">
+                  {failure.name}：{failureText(failure.reason)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -318,8 +349,8 @@ export function Composer({
               type="button"
               className="composer-icon-button"
               onClick={() => void pickFiles()}
-              title="添加图片、PDF 或文件"
-              aria-label="添加图片、PDF 或文件"
+              title="添加图片、PDF 或文本文件"
+              aria-label="添加图片、PDF 或文本文件"
             >
               <Paperclip size={15} />
             </button>
@@ -351,7 +382,6 @@ export function Composer({
           )}
         </div>
       </div>
-      <p className="composer-note">AI 可能会出错，请检查重要操作与代码改动。</p>
     </div>
   )
 }

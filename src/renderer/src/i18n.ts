@@ -236,6 +236,25 @@ const DICTIONARY: Record<string, string> = {
   "Enter 发送 · Shift+Enter 换行": "Enter to send · Shift+Enter for a new line",
   "Claude 可能会出错，请检查重要操作与代码改动。": "Claude can make mistakes. Review important operations and code changes.",
   "添加图片、PDF 或文件": "Add image, PDF, or file",
+  "添加图片、PDF 或文本文件": "Add image, PDF, or text file",
+  "文件过大": "File is too large",
+  "无法读取文件": "Could not read the file",
+  "文件内容为空": "File is empty",
+  "不支持的文件类型": "Unsupported file type",
+  "简洁模式": "Compact mode",
+  "详细模式": "Detailed mode",
+  "切换简洁/详细模式": "Switch compact/detailed mode",
+  "只看我的消息": "My messages only",
+  "只显示我发送的消息": "Show only messages I sent",
+  "全部": "All",
+  "消息范围": "Message scope",
+  "只显示用户消息": "Show only user messages",
+  "显示全部消息": "Show all messages",
+  "切换用户 / 全部消息": "Toggle user / all messages",
+  "点击任意消息跳转到完整对话": "Click a message to jump to the full conversation",
+  "还没有发送过消息": "No messages sent yet",
+  "（附件消息）": "(attachment message)",
+  "个附件": " attachment(s)",
   "发送消息": "Send message",
   "停止生成": "Stop generating",
   "移除附件": "Remove attachment",
@@ -455,6 +474,17 @@ Object.assign(DICTIONARY, {
   '认证方式': 'Authentication',
   'Bearer 使用 Authorization 头；x-api-key 使用 X-Api-Key 头。':
     'Bearer sends an Authorization header; x-api-key sends an X-Api-Key header.',
+  '只有 API 密钥也可以：填好密钥后点“测试并获取模型”，应用会读取模型列表或自动尝试常见模型。':
+    'An API key is enough: after entering it, choose “Test & fetch models”. The app reads the provider model list or tries common models automatically.',
+  '不知道模型？先点“测试并获取模型”。':
+    'Do not know the model? Run “Test & fetch models” first.',
+  '自定义供应商如果没有模型列表，需要填写供应商文档中的模型 ID。':
+    'If a custom provider has no model list, enter a model ID from its documentation.',
+  '测试并获取模型': 'Test & fetch models',
+  '请先选择或填写模型': 'Select or enter a model first.',
+  '选择此模型': 'Use this model',
+  '已自动选择模型': 'Automatically selected model',
+  '连接成功，已自动检测到模型': 'Connected; detected model',
   'Ollama 等本地服务没有密钥时，可填写任意占位值。':
     'For local services such as Ollama, enter any placeholder value if there is no key.',
   '模型列表': 'Models',
@@ -732,6 +762,31 @@ function walk(root: Node): void {
   }
 }
 
+let pendingAdded = new Set<Node>()
+let walkScheduled = false
+
+function flushAddedNodes(): void {
+  walkScheduled = false
+  const roots = [...pendingAdded]
+  pendingAdded.clear()
+  // In Chinese mode the source strings are already correct; only the
+  // English presentation needs the translator.
+  if (currentLanguage === 'zh') return
+  const top = roots.filter(
+    (root) => !roots.some((other) => other !== root && other.contains(root))
+  )
+  for (const root of top) {
+    if (root.isConnected) walk(root)
+  }
+}
+
+function enqueueWalk(root: Node): void {
+  pendingAdded.add(root)
+  if (walkScheduled) return
+  walkScheduled = true
+  requestAnimationFrame(flushAddedNodes)
+}
+
 function applyLanguage(language: Language): void {
   const previous = currentLanguage
   currentLanguage = language
@@ -765,7 +820,7 @@ export function startI18n(initial: Language): void {
       if (mutation.type === 'characterData') {
         processTextNode(mutation.target)
       } else if (mutation.type === 'childList') {
-        for (const node of mutation.addedNodes) walk(node)
+        for (const node of mutation.addedNodes) enqueueWalk(node)
       } else if (mutation.type === 'attributes' && mutation.attributeName) {
         if (ATTRS.includes(mutation.attributeName as (typeof ATTRS)[number])) {
           processAttribute(mutation.target as Element, mutation.attributeName)

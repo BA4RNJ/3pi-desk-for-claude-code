@@ -1,15 +1,16 @@
-import { AlertTriangle, ArrowDown, FolderOpen, Upload } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ChevronRight, FolderOpen, Upload } from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent
 } from 'react'
-import type { UIMessage } from '../types'
+import type { UIMessage, UserMessage } from '../types'
 import { basename, greeting } from '../lib/format'
 import { MessageView } from './MessageView'
-import { Starburst } from './Starburst'
+import { AppMark } from './AppMark'
 
 interface ChatViewProps {
   messages: UIMessage[]
@@ -19,6 +20,9 @@ interface ChatViewProps {
   loadingHistory: boolean
   modelName: string
   error?: string
+  viewMode: 'detail' | 'compact'
+  userOnly: boolean
+  onUserOnlyChange: (value: boolean) => void
   onQuickPrompt: (prompt: string) => void
   onChooseFolder: () => void
   onFilesDropped: (files: File[]) => void
@@ -42,9 +46,7 @@ function Welcome({
 }: Pick<ChatViewProps, 'cwd' | 'onQuickPrompt' | 'onChooseFolder'>) {
   return (
     <div className="welcome">
-      <div className="welcome-mark">
-        <Starburst size={38} />
-      </div>
+      <AppMark size={76} className="welcome-mark" />
       <h1>{greeting()}，今天想一起构建什么？</h1>
       <p className="welcome-sub">
         在本地项目中与 AI 协作。所有命令与文件修改都会先征求你的同意。
@@ -77,6 +79,9 @@ export function ChatView({
   loadingHistory,
   modelName,
   error,
+  viewMode,
+  userOnly,
+  onUserOnlyChange,
   onQuickPrompt,
   onChooseFolder,
   onFilesDropped,
@@ -89,7 +94,14 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
   const [dragging, setDragging] = useState(false)
+  const [pendingJumpId, setPendingJumpId] = useState<string | null>(null)
   const dragDepth = useRef(0)
+  const prevUserOnly = useRef(userOnly)
+
+  const userMessages = useMemo(
+    () => messages.filter((message): message is UserMessage => message.role === 'user'),
+    [messages]
+  )
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth'): void => {
     const element = scrollRef.current
@@ -109,8 +121,36 @@ export function ChatView({
   }, [])
 
   useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+
+    // Jumping out of the user-only view: scroll to the chosen message, and
+    // keep that position when the model replies are shown again.
+    if (pendingJumpId) {
+      const target = element.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(pendingJumpId)}"]`
+      )
+      setAtBottom(false)
+      if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' })
+      setPendingJumpId(null)
+      return
+    }
+
+    // Entering/leaving the user-only view must not force a scroll to bottom.
+    if (prevUserOnly.current !== userOnly) {
+      prevUserOnly.current = userOnly
+      setAtBottom(false)
+      return
+    }
+
     if (atBottom) scrollToBottom('auto')
-  }, [messages, atBottom])
+  }, [messages, atBottom, userOnly, pendingJumpId])
+
+  const jumpToUserMessage = (messageId: string): void => {
+    setAtBottom(false)
+    setPendingJumpId(messageId)
+    onUserOnlyChange(false)
+  }
 
   const empty = messages.length === 0 && !loadingHistory
 
@@ -148,7 +188,7 @@ export function ChatView({
       onDrop={handleDrop}
     >
       <div className="chat-scroll" ref={scrollRef}>
-        <div className="chat-inner">
+        <div className={`chat-inner ${viewMode === 'compact' ? 'is-compact' : ''}`}>
           {error && (
             <div className="error-banner">
               <AlertTriangle size={16} />
@@ -181,13 +221,45 @@ export function ChatView({
             </div>
           )}
 
-          {messages.map((message) => (
-            <MessageView
-              key={message.id}
-              message={message}
-              actions={{ onRewind, onEdit, onBranch, onRegenerate, onOpenFile }}
-            />
-          ))}
+          {userOnly ? (
+            userMessages.length > 0 ? (
+              <div className="user-outline">
+                <p className="user-outline-hint">点击任意消息跳转到完整对话</p>
+                {userMessages.map((message, index) => (
+                  <button
+                    key={message.id}
+                    type="button"
+                    className="user-outline-item"
+                    onClick={() => jumpToUserMessage(message.id)}
+                  >
+                    <span className="user-outline-index">{index + 1}</span>
+                    <span className="user-outline-body">
+                      <span className="user-outline-text">
+                        {message.text || '（附件消息）'}
+                      </span>
+                      {message.attachments && message.attachments.length > 0 && (
+                        <span className="user-outline-meta">
+                          {message.attachments.length} 个附件
+                        </span>
+                      )}
+                    </span>
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="user-outline-empty">还没有发送过消息</div>
+            )
+          ) : (
+            messages.map((message) => (
+              <MessageView
+                key={message.id}
+                message={message}
+                compact={viewMode === 'compact'}
+                actions={{ onRewind, onEdit, onBranch, onRegenerate, onOpenFile }}
+              />
+            ))
+          )}
 
           {running && messages.length > 0 && (
             <div className="running-hint">
@@ -205,7 +277,7 @@ export function ChatView({
         </div>
       )}
 
-      {!atBottom && messages.length > 0 && (
+      {!atBottom && messages.length > 0 && !userOnly && (
         <button
           type="button"
           className="scroll-bottom"

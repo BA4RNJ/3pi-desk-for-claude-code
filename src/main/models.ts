@@ -282,7 +282,8 @@ async function probeModel(
   baseUrl: string,
   token: string,
   model: string,
-  preferredAuthMode?: ApiAuthMode
+  preferredAuthMode?: ApiAuthMode,
+  timeoutMs = 30_000
 ): Promise<{
   ok: boolean
   status: number
@@ -313,7 +314,7 @@ async function probeModel(
           max_tokens: 16,
           messages: [{ role: 'user', content: 'ping' }]
         }),
-        signal: AbortSignal.timeout(30_000)
+        signal: AbortSignal.timeout(timeoutMs)
       })
       if (response.ok) {
         return {
@@ -460,9 +461,45 @@ export async function testApi(patch?: ApiSettingsPatch): Promise<TestApiResult> 
   }
 
   if (!model) {
-    return listError || {
+    if (listError && !listError.status) return listError
+    let lastProbe: {
+      ok: boolean
+      status: number
+      error?: string
+      authMode?: ApiAuthMode
+    } = {
       ok: false,
-      error: 'The provider does not expose a model list; enter a model ID to test.'
+      status: listStatus || listError?.status || 0,
+      error: listError?.error
+    }
+    for (const candidate of preset?.suggestedModels || []) {
+      const probe = await probeModel(
+        baseUrl,
+        token,
+        candidate,
+        patch?.authMode,
+        15_000
+      )
+      if (probe.ok) {
+        return {
+          ok: true,
+          status: probe.status,
+          modelCount: 0,
+          models: [],
+          via: 'messages',
+          authMode: probe.authMode || listAuthMode,
+          discoveredModel: candidate
+        }
+      }
+      lastProbe = probe
+    }
+    return {
+      ok: false,
+      status: lastProbe.status || listStatus || listError?.status,
+      error:
+        lastProbe.error ||
+        listError?.error ||
+        'Could not detect a model automatically. Enter a model ID from the provider documentation.'
     }
   }
 
@@ -477,6 +514,29 @@ export async function testApi(patch?: ApiSettingsPatch): Promise<TestApiResult> 
       authMode: probe.authMode || listAuthMode
     }
   }
+
+  for (const candidate of preset?.suggestedModels || []) {
+    if (candidate === model) continue
+    const fallback = await probeModel(
+      baseUrl,
+      token,
+      candidate,
+      patch?.authMode,
+      15_000
+    )
+    if (fallback.ok) {
+      return {
+        ok: true,
+        status: fallback.status,
+        modelCount: models.length,
+        models,
+        via: models.length > 0 ? 'models' : 'messages',
+        authMode: fallback.authMode || listAuthMode,
+        discoveredModel: candidate
+      }
+    }
+  }
+
   return {
     ok: false,
     status: probe.status || listStatus || listError?.status,

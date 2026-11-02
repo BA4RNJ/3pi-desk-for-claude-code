@@ -42,7 +42,7 @@ import { formatCost, formatTokens } from '../lib/format'
 import { AboutPanel } from './AboutPanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { ExtensionsPanel } from './ExtensionsPanel'
-import { Starburst } from './Starburst'
+import { AppMark } from './AppMark'
 import { UsagePanel } from './UsagePanel'
 
 export type SettingsTab =
@@ -136,7 +136,9 @@ export function SettingsDialog({
       fontScale: 1,
       accent: 'coral',
       compactMode: false,
-      recentWorkspaces: []
+      recentWorkspaces: [],
+      chatSettings: {},
+      lastChatSettings: {}
     }
   )
   const [providerId, setProviderId] = useState(
@@ -296,7 +298,22 @@ export function SettingsDialog({
     setSavingPrefs(true)
     setMessage('')
     try {
-      await onSavePreferences(preferences)
+      // Send only the fields this dialog edits. Sending the whole preferences
+      // object would overwrite recent workspaces, pinned sessions, and
+      // per-conversation settings that may have changed while it was open.
+      await onSavePreferences({
+        ideIntegration: preferences.ideIntegration,
+        chromeIntegration: preferences.chromeIntegration,
+        maxBudgetUsd: preferences.maxBudgetUsd,
+        closeToTray: preferences.closeToTray,
+        globalShortcut: preferences.globalShortcut,
+        fontScale: preferences.fontScale,
+        accent: preferences.accent,
+        compactMode: preferences.compactMode,
+        additionalDirectories: preferences.additionalDirectories,
+        allowedTools: preferences.allowedTools,
+        disallowedTools: preferences.disallowedTools
+      })
       setMessage('偏好已保存，集成开关对新会话生效')
     } catch (saveError) {
       setMessage(errorText(saveError))
@@ -374,6 +391,10 @@ export function SettingsDialog({
       })
       setTestResult(result)
       if (result.ok && result.authMode) setAuthMode(result.authMode)
+      if (result.ok && result.discoveredModel) {
+        setModel(result.discoveredModel)
+        setMessage(`已自动选择模型 ${result.discoveredModel}`)
+      }
     } catch (testError) {
       setTestResult({ ok: false, error: errorText(testError) })
     } finally {
@@ -386,9 +407,7 @@ export function SettingsDialog({
       <div className="settings-shell" role="dialog" aria-modal="true" aria-label="设置">
         <div className="settings-sidebar">
           <div className="settings-brand">
-            <span className="settings-mark">
-              <Starburst size={24} />
-            </span>
+            <AppMark size={40} className="settings-mark" />
             <div>
               <h2>3PI Desk</h2>
               <p>AI 编程工作台 · v0.4.0</p>
@@ -677,6 +696,14 @@ export function SettingsDialog({
               <p className="settings-page-sub">
                 选择供应商，填写密钥与模型。配置写入 ~/.claude/settings.json，密钥只保存在本机。
               </p>
+                <p className="settings-note">
+                  只有 API 密钥也可以：填好密钥后点“测试并获取模型”，应用会读取模型列表或自动尝试常见模型。
+                </p>
+                {providerId === 'custom' && (
+                  <p className="settings-note">
+                    自定义供应商如果没有模型列表，需要填写供应商文档中的模型 ID。
+                  </p>
+                )}
 
               <div className="settings-group">
                 <span className="settings-label">供应商</span>
@@ -844,6 +871,9 @@ export function SettingsDialog({
                     </option>
                   ))}
                 </datalist>
+                <p className="settings-note">
+                  不知道模型？先点“测试并获取模型”。
+                </p>
               </div>
 
               <div className="settings-group">
@@ -853,7 +883,15 @@ export function SettingsDialog({
                     <span className="settings-empty">还没有可用模型。</span>
                   )}
                   {visibleModels.slice(0, 40).map((option) => (
-                    <div className="settings-row" key={option.id}>
+                    <button
+                      type="button"
+                      className={`settings-row model-row ${
+                        model === option.id ? 'is-active' : ''
+                      }`}
+                      key={option.id}
+                      title="选择此模型"
+                      onClick={() => setModel(option.id)}
+                    >
                       <span>{option.name}</span>
                       <strong>
                         {option.id}
@@ -861,7 +899,7 @@ export function SettingsDialog({
                           ? ` · ${formatTokens(option.contextWindow)}`
                           : ''}
                       </strong>
-                    </div>
+                    </button>
                   ))}
                 </div>
                 <p className="settings-note">
@@ -957,7 +995,9 @@ export function SettingsDialog({
               {testResult && (
                 <div className={`settings-message ${testResult.ok ? '' : 'is-error'}`}>
                   {testResult.ok ? (
-                    testResult.via === 'messages' ? (
+                    testResult.discoveredModel ? (
+                      <>连接成功，已自动检测到模型 {testResult.discoveredModel}</>
+                    ) : testResult.via === 'messages' ? (
                       '连接成功（供应商未提供模型列表，已用当前模型验证）'
                     ) : (
                       <>连接成功，可用模型 {testResult.modelCount ?? 0}</>
@@ -977,7 +1017,7 @@ export function SettingsDialog({
                   onClick={() => void test()}
                 >
                   <RefreshCw size={14} className={testing ? 'spin-icon' : ''} />
-                  {testing ? '测试中…' : '测试连接'}
+                  {testing ? '测试中…' : '测试并获取模型'}
                 </button>
                 <button
                   type="button"
@@ -987,6 +1027,9 @@ export function SettingsDialog({
                     !baseUrl.trim() ||
                     !model.trim() ||
                     providerNeedsToken
+                  }
+                  title={
+                    !model.trim() ? '请先选择或填写模型' : undefined
                   }
                   onClick={() => void saveApi()}
                 >

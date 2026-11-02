@@ -1,6 +1,6 @@
 appId: local.3pidesk
 productName: 3PI Desk for Claude Code
-copyright: Local application
+copyright: Copyright © 2026 BA4RNJ
 electronDist: node_modules/electron/dist
 directories:
   output: release
@@ -19,12 +19,24 @@ files:
   - "!*.log"
 asarUnpack:
   - node_modules/@anthropic-ai/**
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 npmRebuild: false
 linux:
   target:
-    - dir
+    - AppImage
+    - deb
   category: Development
   icon: build/icon.png
   executableName: 3pi-desk
+  syncDesktopName: true
+  artifactName: 3pi-desk-${version}-${arch}.${ext}
+  maintainer: BA4RNJ <BA4RNJ@users.noreply.github.com>
+  vendor: BA4RNJ
   synopsis: 3PI Desk for Claude Code
   description: 3PI Desk for Claude Code - a local GUI for Claude Code powered by the Claude Agent SDK.

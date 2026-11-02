@@ -56,23 +56,34 @@ function copyText(text: string): void {
 
 function AssistantView({
   message,
-  actions
+  actions,
+  compact
 }: {
   message: AssistantMessage
   actions: MessageActions
+  compact: boolean
 }) {
   const plainText = message.blocks
     .map((block) => (block.kind === 'text' ? block.text : ''))
     .filter(Boolean)
     .join('\n\n')
+  const blocks = compact
+    ? message.blocks.filter((block) => block.kind === 'text')
+    : message.blocks
+  const showPlaceholder = message.streaming && blocks.length === 0
+
+  if (compact && !showPlaceholder && plainText.trim().length === 0) {
+    return null
+  }
+
   return (
-    <div className="message message-assistant">
+    <div className="message message-assistant" data-message-id={message.id}>
       <div className="avatar">
         <Starburst size={17} />
       </div>
       <div className="message-body">
-        {message.parentToolUseId && <span className="subagent-badge">子代理</span>}
-        {message.blocks.map((block, index) => {
+        {message.parentToolUseId && !compact && <span className="subagent-badge">子代理</span>}
+        {blocks.map((block, index) => {
           if (block.kind === 'text') {
             return <Markdown key={`text-${index}`}>{block.text}</Markdown>
           }
@@ -93,7 +104,7 @@ function AssistantView({
             />
           )
         })}
-        {message.streaming && message.blocks.length === 0 && (
+        {showPlaceholder && (
           <div className="thinking-placeholder">
             <span className="pulse-dot" />
             <span className="pulse-dot" />
@@ -138,7 +149,7 @@ function UserView({
   actions: MessageActions
 }) {
   return (
-    <div className="message message-user">
+    <div className="message message-user" data-message-id={message.id}>
       <div className="user-message-wrap">
         <div className="user-bubble">
           {message.attachments && message.attachments.length > 0 && (
@@ -193,16 +204,19 @@ function UserView({
 
 export function MessageView({
   message,
-  actions
+  actions,
+  compact = false
 }: {
   message: UIMessage
   actions: MessageActions
+  compact?: boolean
 }) {
   if (message.role === 'user') {
     return <UserView message={message} actions={actions} />
   }
 
   if (message.role === 'notice') {
+    if (compact && message.tone !== 'error') return null
     return (
       <div className={`notice notice-${message.tone}`}>
         <span>{message.text}</span>
@@ -210,5 +224,5 @@ export function MessageView({
     )
   }
 
-  return <AssistantView message={message} actions={actions} />
+  return <AssistantView message={message} actions={actions} compact={compact} />
 }

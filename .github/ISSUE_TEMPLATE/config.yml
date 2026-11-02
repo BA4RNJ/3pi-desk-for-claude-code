@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/BA4RNJ/3pi-desk-for-claude-code/security/advisories/new
+    about: Report security issues privately. Do not open a public issue.
+  - name: Installation and third-party API setup
+    url: https://github.com/BA4RNJ/3pi-desk-for-claude-code/blob/main/docs/SETUP.md
+    about: Read the setup tutorial before asking for help.
+  - name: Architecture and maintenance
+    url: https://github.com/BA4RNJ/3pi-desk-for-claude-code/blob/main/docs/DEVELOPMENT.md
+    about: Read the development guide before contributing code.

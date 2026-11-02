@@ -7,7 +7,7 @@ import type {
   AppDefaults,
   BackgroundSession,
   BackgroundStartResult,
-  Attachment,
+  AttachmentPickResult,
   CustomModel,
   DeskApi,
   EffortSetting,
@@ -96,7 +96,7 @@ const api: DeskApi = {
     ipcRenderer.invoke('files:export', defaultName, content),
   pickDirectory: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickDirectory', defaultPath),
-  pickFiles: (): Promise<Attachment[]> => ipcRenderer.invoke('files:pick'),
+  pickFiles: (): Promise<AttachmentPickResult> => ipcRenderer.invoke('files:pick'),
   getDefaults: (): Promise<AppDefaults> => ipcRenderer.invoke('defaults:get'),
   saveCwd: (cwd: string): Promise<void> => ipcRenderer.invoke('cwd:save', cwd),
   getSettings: (): Promise<SettingsSnapshot> => ipcRenderer.invoke('settings:get'),

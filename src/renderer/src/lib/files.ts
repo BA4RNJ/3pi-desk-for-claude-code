@@ -1,20 +1,20 @@
-import type { Attachment } from '../../../shared/types'
+import type { Attachment, AttachmentFailureReason } from '../../../shared/types'
+import {
+  DOCUMENT_TYPES,
+  IMAGE_TYPES,
+  MAX_DOCUMENT_BYTES,
+  MAX_IMAGE_BYTES,
+  SUPPORTED_IMAGE_MEDIA_TYPES,
+  TEXT_FULL_LIMIT_BYTES,
+  TEXT_PREVIEW_LIMIT_BYTES,
+  decodeTextBytes,
+  extensionOf,
+  isSvgFile
+} from '../../../shared/attachments'
 
-const DOCUMENT_TYPES: Record<string, string> = {
-  pdf: 'application/pdf'
-}
-
-const IMAGE_TYPES: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp'
-}
-
-function extension(name: string): string {
-  const index = name.lastIndexOf('.')
-  return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
+export interface FileAttachmentResult {
+  attachment: Attachment | null
+  reason?: AttachmentFailureReason
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -26,47 +26,83 @@ function readAsDataUrl(file: File): Promise<string> {
   })
 }
 
-export async function fileToAttachment(file: File): Promise<Attachment | null> {
-  const mediaType = file.type || IMAGE_TYPES[extension(file.name)]
-  if (mediaType.startsWith('image/')) {
-    if (file.size > 12 * 1024 * 1024) return null
-    const dataUrl = await readAsDataUrl(file)
-    const comma = dataUrl.indexOf(',')
-    if (comma < 0) return null
+async function base64Payload(file: File): Promise<string | null> {
+  const dataUrl = await readAsDataUrl(file)
+  const comma = dataUrl.indexOf(',')
+  return comma >= 0 ? dataUrl.slice(comma + 1) : null
+}
+
+/**
+ * Convert a dropped/pasted/chosen browser File into an API attachment.
+ *
+ * Images are limited to formats the Messages API accepts. SVG is attached as
+ * text (its source), and any other file is sniffed: text-like files become
+ * text attachments, binary/unsupported files are reported back to the UI
+ * instead of being silently dropped.
+ */
+export async function fileToAttachment(file: File): Promise<FileAttachmentResult> {
+  const extension = extensionOf(file.name)
+  const declaredType = (file.type || '').toLowerCase()
+  const imageType =
+    IMAGE_TYPES[extension] ||
+    (SUPPORTED_IMAGE_MEDIA_TYPES.has(declaredType) ? declaredType : '')
+
+  if (!isSvgFile(file.name, declaredType) && imageType) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      return { attachment: null, reason: 'too-large' }
+    }
+    const data = await base64Payload(file)
+    if (!data) return { attachment: null, reason: 'unreadable' }
     return {
-      kind: 'image',
-      name: file.name || '图片',
-      mediaType,
-      data: dataUrl.slice(comma + 1)
+      attachment: {
+        kind: 'image',
+        name: file.name || '图片',
+        mediaType: imageType,
+        data
+      }
     }
   }
 
-  const documentType = DOCUMENT_TYPES[extension(file.name)]
+  if (declaredType.startsWith('image/') && !isSvgFile(file.name, declaredType)) {
+    return { attachment: null, reason: 'unsupported' }
+  }
+
+  const documentType =
+    DOCUMENT_TYPES[extension] || (declaredType === 'application/pdf' ? declaredType : '')
   if (documentType) {
-    if (file.size > 20 * 1024 * 1024) return null
-    const dataUrl = await readAsDataUrl(file)
-    const comma = dataUrl.indexOf(',')
-    if (comma < 0) return null
+    if (file.size > MAX_DOCUMENT_BYTES) {
+      return { attachment: null, reason: 'too-large' }
+    }
+    const data = await base64Payload(file)
+    if (!data) return { attachment: null, reason: 'unreadable' }
     return {
-      kind: 'document',
-      name: file.name || '文档',
-      mediaType: documentType,
-      data: dataUrl.slice(comma + 1)
+      attachment: {
+        kind: 'document',
+        name: file.name || '文档',
+        mediaType: documentType,
+        data
+      }
     }
   }
 
-  if (file.size <= 512 * 1024) {
-    const text = await file.text()
-    if (!text) return null
-    return { kind: 'text', name: file.name || '附件', text }
-  }
+  const readSize =
+    file.size > TEXT_FULL_LIMIT_BYTES
+      ? Math.min(file.size, TEXT_PREVIEW_LIMIT_BYTES)
+      : file.size
+  const buffer = await file.slice(0, readSize).arrayBuffer()
+  const text = decodeTextBytes(new Uint8Array(buffer))
+  if (text === null) return { attachment: null, reason: 'unsupported' }
+  if (!text.trim()) return { attachment: null, reason: 'empty' }
 
-  const slice = file.slice(0, 200 * 1024)
-  const text = await slice.text()
   return {
-    kind: 'text',
-    name: file.name || '附件',
-    text: `${text}\n\n…（文件过大，已截断）`
+    attachment: {
+      kind: 'text',
+      name: file.name || '附件',
+      text:
+        file.size > TEXT_FULL_LIMIT_BYTES
+          ? `${text}\n\n…（文件过大，已截断）`
+          : text
+    }
   }
 }
 

@@ -1,7 +1,24 @@
 import { dialog } from 'electron'
 import { promises as fs } from 'node:fs'
 import { basename, relative } from 'node:path'
-import type { Attachment, FileContent, FileEntry, FileNode } from '../shared/types'
+import type {
+  Attachment,
+  AttachmentFailure,
+  AttachmentPickResult,
+  FileContent,
+  FileEntry,
+  FileNode
+} from '../shared/types'
+import {
+  DOCUMENT_TYPES,
+  IMAGE_TYPES,
+  MAX_DOCUMENT_BYTES,
+  MAX_IMAGE_BYTES,
+  TEXT_FULL_LIMIT_BYTES,
+  TEXT_PREVIEW_LIMIT_BYTES,
+  decodeTextBytes,
+  extensionOf
+} from '../shared/attachments'
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -80,90 +97,58 @@ export async function searchFiles(cwd: string, query: string): Promise<FileEntry
   return results.slice(0, MAX_RESULTS).map(({ score: _score, ...entry }) => entry)
 }
 
-const IMAGE_TYPES: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp'
+async function readTextPreview(path: string, size: number): Promise<string | null> {
+  const readSize = size > TEXT_FULL_LIMIT_BYTES ? TEXT_PREVIEW_LIMIT_BYTES : size
+  if (readSize <= 0) return ''
+  const handle = await fs.open(path, 'r')
+  try {
+    const buffer = Buffer.alloc(readSize)
+    const { bytesRead } = await handle.read(buffer, 0, readSize, 0)
+    return decodeTextBytes(buffer.subarray(0, bytesRead))
+  } finally {
+    await handle.close()
+  }
 }
 
-const DOCUMENT_TYPES: Record<string, string> = {
-  pdf: 'application/pdf'
-}
-
-const TEXT_EXTENSIONS = new Set([
-  'txt',
-  'md',
-  'mdx',
-  'ts',
-  'tsx',
-  'js',
-  'jsx',
-  'mjs',
-  'cjs',
-  'json',
-  'jsonc',
-  'yaml',
-  'yml',
-  'toml',
-  'ini',
-  'conf',
-  'cfg',
-  'py',
-  'go',
-  'rs',
-  'java',
-  'kt',
-  'c',
-  'h',
-  'cpp',
-  'hpp',
-  'cs',
-  'rb',
-  'php',
-  'swift',
-  'css',
-  'scss',
-  'less',
-  'html',
-  'vue',
-  'svelte',
-  'xml',
-  'csv',
-  'sql',
-  'sh',
-  'bash',
-  'zsh',
-  'fish',
-  'log',
-  'env'
-])
-
-function extensionOf(path: string): string {
-  const name = basename(path)
-  const index = name.lastIndexOf('.')
-  return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
-}
-
-export async function readAttachments(paths: string[]): Promise<Attachment[]> {
+/**
+ * Read chosen files into attachments. Unsupported or oversized files are
+ * reported to the renderer instead of being dropped silently.
+ */
+export async function readAttachments(paths: string[]): Promise<AttachmentPickResult> {
   const attachments: Attachment[] = []
+  const errors: AttachmentFailure[] = []
+
   for (const path of paths) {
+    const name = basename(path)
     try {
       const stat = await fs.stat(path)
-      if (!stat.isFile()) continue
-      const extension = extensionOf(path)
-      const name = basename(path)
-      const mediaType = IMAGE_TYPES[extension]
-      if (mediaType) {
-        if (stat.size > 12 * 1024 * 1024) continue
-        const data = await fs.readFile(path)
-        attachments.push({ kind: 'image', name, mediaType, data: data.toString('base64') })
+      if (!stat.isFile()) {
+        errors.push({ name, reason: 'unsupported' })
         continue
       }
+      if (stat.size === 0) {
+        errors.push({ name, reason: 'empty' })
+        continue
+      }
+
+      const extension = extensionOf(path)
+      const imageType = IMAGE_TYPES[extension]
+      if (imageType) {
+        if (stat.size > MAX_IMAGE_BYTES) {
+          errors.push({ name, reason: 'too-large' })
+          continue
+        }
+        const data = await fs.readFile(path)
+        attachments.push({ kind: 'image', name, mediaType: imageType, data: data.toString('base64') })
+        continue
+      }
+
       const documentType = DOCUMENT_TYPES[extension]
       if (documentType) {
-        if (stat.size > 20 * 1024 * 1024) continue
+        if (stat.size > MAX_DOCUMENT_BYTES) {
+          errors.push({ name, reason: 'too-large' })
+          continue
+        }
         const data = await fs.readFile(path)
         attachments.push({
           kind: 'document',
@@ -173,48 +158,75 @@ export async function readAttachments(paths: string[]): Promise<Attachment[]> {
         })
         continue
       }
-      if (TEXT_EXTENSIONS.has(extension) || !extension) {
-        if (stat.size > 512 * 1024) {
-          const handle = await fs.open(path, 'r')
-          try {
-            const buffer = Buffer.alloc(200 * 1024)
-            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-            attachments.push({
-              kind: 'text',
-              name,
-              text: `${buffer.subarray(0, bytesRead).toString('utf8')}\n\n… (file too large; truncated)`
-            })
-          } finally {
-            await handle.close()
-          }
-        } else {
-          attachments.push({ kind: 'text', name, text: await fs.readFile(path, 'utf8') })
-        }
+
+      // SVG, source code, configs, CSV, logs, and other text-like files.
+      const text = await readTextPreview(path, stat.size)
+      if (text === null) {
+        errors.push({ name, reason: 'unsupported' })
+        continue
       }
+      if (!text.trim()) {
+        errors.push({ name, reason: 'empty' })
+        continue
+      }
+      attachments.push({
+        kind: 'text',
+        name,
+        text:
+          stat.size > TEXT_FULL_LIMIT_BYTES
+            ? `${text}\n\n… (file too large; truncated)`
+            : text
+      })
     } catch {
-      // skip unreadable files
+      errors.push({ name, reason: 'unreadable' })
     }
   }
-  return attachments
+
+  return { attachments, errors }
 }
 
-export async function pickAttachmentFiles(): Promise<Attachment[]> {
+export async function pickAttachmentFiles(): Promise<AttachmentPickResult> {
   const result = await dialog.showOpenDialog({
     title: 'Choose files to attach',
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
-        name: 'Images and text files',
+        name: 'Images, PDF, and text files',
         extensions: [
           ...Object.keys(IMAGE_TYPES),
           ...Object.keys(DOCUMENT_TYPES),
-          ...Array.from(TEXT_EXTENSIONS)
+          'svg',
+          'txt',
+          'md',
+          'json',
+          'jsonc',
+          'yaml',
+          'yml',
+          'toml',
+          'csv',
+          'xml',
+          'html',
+          'css',
+          'js',
+          'jsx',
+          'ts',
+          'tsx',
+          'py',
+          'go',
+          'rs',
+          'java',
+          'c',
+          'cpp',
+          'sh',
+          'log'
         ]
       },
       { name: 'All files', extensions: ['*'] }
     ]
   })
-  if (result.canceled || result.filePaths.length === 0) return []
+  if (result.canceled || result.filePaths.length === 0) {
+    return { attachments: [], errors: [] }
+  }
   return readAttachments(result.filePaths)
 }
 
@@ -287,19 +299,22 @@ export async function readFileContent(cwd: string, path: string): Promise<FileCo
       mimeType: mediaType
     }
   }
-  if (TEXT_EXTENSIONS.has(extension) || !extension) {
-    const limit = 1024 * 1024
-    const handle = await fs.open(target, 'r')
-    try {
-      const buffer = Buffer.alloc(Math.min(stat.size, limit))
-      await handle.read(buffer, 0, buffer.length, 0)
-      const text =
-        buffer.toString('utf8') +
-        (stat.size > limit ? '\n\n… (file too large; truncated)' : '')
-      return { kind: 'text', path: target, text, size: stat.size }
-    } finally {
-      await handle.close()
+  const limit = 1024 * 1024
+  const handle = await fs.open(target, 'r')
+  try {
+    const buffer = Buffer.alloc(Math.min(stat.size, limit))
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    const text = decodeTextBytes(buffer.subarray(0, bytesRead))
+    if (text !== null) {
+      return {
+        kind: 'text',
+        path: target,
+        text: text + (stat.size > limit ? '\n\n… (file too large; truncated)' : ''),
+        size: stat.size
+      }
     }
+  } finally {
+    await handle.close()
   }
   return { kind: 'binary', path: target, size: stat.size }
 }
