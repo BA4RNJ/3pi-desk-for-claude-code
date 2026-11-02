@@ -140,3 +140,60 @@ jobs:
             release/*.zip \
             release/SHA256SUMS-macos \
             --clobber
+
+  wsl:
+    name: Build WSL2 packages
+    needs: linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure native binaries
+        run: |
+          node node_modules/electron/install.js
+          test -x node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build application
+        run: npx electron-vite build
+
+      - name: Package WSL2 AppImage and deb
+        run: npx electron-builder --linux AppImage deb --config electron-builder.wsl.yml --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate checksums
+        run: |
+          cd release-wsl
+          sha256sum *.AppImage *.deb > SHA256SUMS-wsl
+          cat SHA256SUMS-wsl
+          ls -lh *.AppImage *.deb
+
+      - name: Upload WSL2 artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            release-wsl/*.AppImage \
+            release-wsl/*.deb \
+            release-wsl/SHA256SUMS-wsl \
+            --clobber

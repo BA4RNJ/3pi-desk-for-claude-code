@@ -66,26 +66,29 @@ In **Settings → Branches** (or Rulesets):
 
 ## Tag and publish
 
-The release workflow builds Linux AppImage/deb and a macOS dmg/zip, generates
-`SHA256SUMS` / `SHA256SUMS-macos`, and creates a **draft** GitHub Release. macOS artifacts are
-unsigned and unnotarized unless Apple signing secrets are added to the repository; their filename
-includes the runner architecture.
+The release workflow builds Linux AppImage/deb, a macOS dmg/zip, and the WSL2 AppImage/deb,
+generates `SHA256SUMS`, `SHA256SUMS-macos`, and `SHA256SUMS-wsl`, and creates a **draft** GitHub
+Release. macOS artifacts are unsigned and unnotarized unless Apple signing secrets are added to
+the repository; their filename includes the runner architecture.
 
 ```bash
-git tag -a v0.4.0 -m "3PI Desk for Claude Code v0.4.0"
-git push origin v0.4.0
+git tag -a v0.4.1 -m "3PI Desk for Claude Code v0.4.1"
+git push origin v0.4.1
 ```
+
+The `wsl-v*` workflow remains available for an optional WSL-only release, but normal `v*`
+releases include the WSL2 packages alongside Linux and macOS.
 
 Then:
 
-1. Open **Actions → Release** and wait for the Linux and macOS jobs.
+1. Open **Actions → Release** and wait for the Linux, macOS, and WSL2 jobs.
 2. Open **Releases**, review the draft, and add a short legal note:
 
    > Release packages include Anthropic's Claude Code CLI. Use and redistribution are subject to
    > Anthropic's legal agreements. See `THIRD_PARTY_NOTICES.md`.
 
-3. Download one artifact per platform, verify `SHA256SUMS` / `SHA256SUMS-macos`, launch it, and
-   send one real prompt.
+3. Download one artifact per platform, verify `SHA256SUMS` / `SHA256SUMS-macos` /
+   `SHA256SUMS-wsl`, launch it, and send one real prompt.
 4. Publish the draft.
 
 ## Licensing reminder
