@@ -187,12 +187,39 @@ export class RemoteServer {
     const wss = this.wss
     this.wss = null
     if (wss) {
-      await new Promise<void>((resolvePromise) => wss.close(() => resolvePromise()))
+      // Terminating here avoids a graceful close handshake keeping the server
+      // alive when a browser has already disappeared.
+      for (const socket of wss.clients) {
+        try {
+          socket.terminate()
+        } catch {
+          // already closed
+        }
+      }
+      await new Promise<void>((resolvePromise) => {
+        const timer = setTimeout(resolvePromise, 2000)
+        wss.close(() => {
+          clearTimeout(timer)
+          resolvePromise()
+        })
+      })
     }
     const server = this.httpServer
     this.httpServer = null
     if (server) {
-      await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()))
+      await new Promise<void>((resolvePromise) => {
+        const timer = setTimeout(() => {
+          // Node 18+: drop keep-alive sockets that would otherwise hold
+          // server.close() open indefinitely.
+          server.closeAllConnections?.()
+          resolvePromise()
+        }, 2000)
+        server.close(() => {
+          clearTimeout(timer)
+          resolvePromise()
+        })
+        server.closeIdleConnections?.()
+      })
     }
     this.running = false
   }
