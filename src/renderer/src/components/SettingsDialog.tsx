@@ -5,6 +5,7 @@ import {
   FolderOpen,
   FolderPlus,
   Gauge,
+  Globe,
   Info,
   KeyRound,
   Monitor,
@@ -12,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Settings,
   Shield,
   Sun,
@@ -19,7 +21,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ApiAuthMode,
   ApiProfile,
@@ -32,13 +34,18 @@ import type {
   ModelOption,
   PermissionRules,
   SettingsSnapshot,
-  TestApiResult
+  TestApiResult,
+  ThemePalette,
+  WebSearchPatch,
+  WebSearchSettings,
+  WebSearchTestResult
 } from '../../../shared/types'
 import {
   PROVIDER_PRESETS,
   findProviderPreset,
   providerDisplayName
 } from '../../../shared/providers'
+import { isWebSearchConfigured } from '../../../shared/web-search'
 import type { TabView, ThemeMode } from '../types'
 import type { Language } from '../i18n'
 import { formatCost, formatTokens } from '../lib/format'
@@ -46,6 +53,7 @@ import { AboutPanel } from './AboutPanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { ExtensionsPanel } from './ExtensionsPanel'
 import { AppMark } from './AppMark'
+import { RemotePanel } from './RemotePanel'
 import { UsagePanel } from './UsagePanel'
 
 export type SettingsTab =
@@ -54,6 +62,7 @@ export type SettingsTab =
   | 'permissions'
   | 'extensions'
   | 'background'
+  | 'remote'
   | 'usage'
   | 'about'
 
@@ -72,11 +81,14 @@ interface SettingsDialogProps {
   onSavePreferences: (patch: Partial<AppPreferences>) => Promise<void>
   onTestApi: (patch?: ApiSettingsPatch) => Promise<TestApiResult>
   onSavePermissionRules: (rules: PermissionRules) => Promise<PermissionRules>
+  webSearch?: WebSearchSettings
+  onSaveWebSearch: (patch: WebSearchPatch) => Promise<WebSearchSettings>
+  onTestWebSearch: (patch?: WebSearchPatch) => Promise<WebSearchTestResult>
   onSaveCustomModel: (model: CustomModel) => Promise<CustomModel[]>
   onDeleteCustomModel: (id: string, providerId?: string) => Promise<CustomModel[]>
   onSaveApiProfile: (profile: ApiProfileInput) => Promise<ApiProfile[]>
   onDeleteApiProfile: (id: string) => Promise<ApiProfile[]>
-  onApplyApiProfile: (id: string) => Promise<unknown>
+  onApplyApiProfile: (id: string, restartActive?: boolean) => Promise<unknown>
   onOpenConsole: (providerId?: string) => void
   onOpenPath: (path: string) => void
   claudeCli: ClaudeCliStatus | null
@@ -92,12 +104,49 @@ const THEMES: Array<{ id: ThemeMode; label: string; icon: typeof Sun }> = [
   { id: 'system', label: '跟随系统', icon: Monitor }
 ]
 
+const WEB_SEARCH_PROVIDERS: Array<{
+  id: WebSearchSettings['provider']
+  label: string
+  hint: string
+}> = [
+  { id: 'duckduckgo', label: 'DuckDuckGo', hint: '无需密钥，适合直接开始；可能受频率限制。' },
+  { id: 'bing', label: 'Bing', hint: '无需密钥；在 DuckDuckGo 受限的网络中可用。' },
+  { id: 'baidu', label: 'Baidu', hint: '无需密钥；适合中文网络和中文结果。' },
+  { id: 'searxng', label: 'SearXNG', hint: '填写自建或可用的 SearXNG 地址，需开启 JSON 输出。' },
+  { id: 'tavily', label: 'Tavily', hint: '需要 Tavily API Key，结果质量稳定。' },
+  { id: 'brave', label: 'Brave Search', hint: '需要 Brave Search API Key。' }
+]
+
+const PALETTES: Array<{ id: ThemePalette; label: string; hint: string }> = [
+  { id: 'claude', label: '卡其暖色', hint: 'Claude Code 风格' },
+  { id: 'mono', label: '黑白', hint: '中性灰阶' },
+  { id: 'blue', label: '蓝白', hint: '冷色工作台' },
+  { id: 'green', label: '绿白', hint: '柔和护眼' }
+]
+
+const PRESET_ACCENTS = ['coral', 'blue', 'green', 'purple'] as const
+
+const ACCENT_HEX: Record<string, string> = {
+  coral: '#d97757',
+  blue: '#5b7fc7',
+  green: '#4f8a63',
+  purple: '#7d6bb0'
+}
+
+const PALETTE_ACCENTS: Record<ThemePalette, string> = {
+  claude: 'coral',
+  mono: '#4a4a4a',
+  blue: 'blue',
+  green: 'green'
+}
+
 const NAV: Array<{ id: SettingsTab; label: string; icon: typeof Settings }> = [
   { id: 'general', label: '常规', icon: Settings },
   { id: 'api', label: 'API', icon: KeyRound },
   { id: 'permissions', label: '权限', icon: Shield },
   { id: 'extensions', label: '扩展', icon: Blocks },
   { id: 'background', label: '后台', icon: Terminal },
+  { id: 'remote', label: '远程访问', icon: Globe },
   { id: 'usage', label: '用量', icon: Gauge },
   { id: 'about', label: '关于', icon: Info }
 ]
@@ -135,6 +184,9 @@ export function SettingsDialog({
   onSavePreferences,
   onTestApi,
   onSavePermissionRules,
+  webSearch,
+  onSaveWebSearch,
+  onTestWebSearch,
   onSaveCustomModel,
   onDeleteCustomModel,
   onSaveApiProfile,
@@ -162,8 +214,11 @@ export function SettingsDialog({
       globalShortcut: false,
       fontScale: 1,
       accent: 'coral',
+      palette: 'claude',
       compactMode: false,
       recentWorkspaces: [],
+      projectFolders: [],
+      workspaceFolderMap: {},
       chatSettings: {},
       lastChatSettings: {},
       hiddenSessions: []
@@ -200,8 +255,23 @@ export function SettingsDialog({
   const [askText, setAskText] = useState('')
   const [denyText, setDenyText] = useState('')
   const [profileName, setProfileName] = useState('')
+  const [apiFormOpen, setApiFormOpen] = useState(false)
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
   const [cliBusy, setCliBusy] = useState(false)
   const [cliError, setCliError] = useState('')
+  const [webSearchDraft, setWebSearchDraft] = useState<WebSearchSettings>(
+    webSearch || {
+      enabled: true,
+      provider: 'duckduckgo',
+      endpoint: '',
+      hasApiKey: false,
+      apiKeyMasked: '',
+      maxResults: 6
+    }
+  )
+  const [webSearchKey, setWebSearchKey] = useState('')
+  const [webSearchBusy, setWebSearchBusy] = useState(false)
+  const [webSearchResult, setWebSearchResult] = useState<WebSearchTestResult | null>(null)
 
   useEffect(() => {
     if (settings) {
@@ -225,6 +295,10 @@ export function SettingsDialog({
     }
   }, [settings])
 
+  useEffect(() => {
+    if (webSearch) setWebSearchDraft(webSearch)
+  }, [webSearch])
+
   const provider = findProviderPreset(providerId)
   const cliProgress = claudeCli?.progress
   const cliPercent =
@@ -233,8 +307,20 @@ export function SettingsDialog({
       : null
   const savedProviderId =
     settings?.api.providerId || findProviderPreset(settings?.api.baseUrl)?.id || 'custom'
-  const providerNeedsToken =
-    providerId !== savedProviderId && Boolean(settings?.api.hasToken) && !token.trim()
+  const formNeedsToken =
+    !editingProfileId &&
+    !token.trim() &&
+    providerId !== 'ollama' &&
+    !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(baseUrl.trim())
+  const webSearchUsable =
+    !webSearchDraft.enabled ||
+    isWebSearchConfigured({
+      provider: webSearchDraft.provider,
+      endpoint: webSearchDraft.endpoint,
+      apiKey: webSearchKey || (webSearchDraft.hasApiKey ? 'saved' : ''),
+      maxResults: webSearchDraft.maxResults,
+      enabled: webSearchDraft.enabled
+    })
   const isLocalUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(
     baseUrl.trim()
   )
@@ -356,6 +442,7 @@ export function SettingsDialog({
         globalShortcut: preferences.globalShortcut,
         fontScale: preferences.fontScale,
         accent: preferences.accent,
+        palette: preferences.palette,
         compactMode: preferences.compactMode,
         additionalDirectories: preferences.additionalDirectories,
         allowedTools: preferences.allowedTools,
@@ -366,6 +453,67 @@ export function SettingsDialog({
       setMessage(errorText(saveError))
     } finally {
       setSavingPrefs(false)
+    }
+  }
+
+  const saveWebSearch = async (): Promise<void> => {
+    setWebSearchBusy(true)
+    setMessage('')
+    setWebSearchResult(null)
+    try {
+      const next = await onSaveWebSearch({
+        enabled: webSearchDraft.enabled,
+        provider: webSearchDraft.provider,
+        endpoint: webSearchDraft.endpoint,
+        maxResults: webSearchDraft.maxResults,
+        apiKey: webSearchKey.trim() ? webSearchKey.trim() : undefined
+      })
+      setWebSearchDraft(next)
+      setWebSearchKey('')
+      setMessage('联网搜索设置已保存，新会话生效')
+    } catch (saveError) {
+      setMessage(errorText(saveError))
+    } finally {
+      setWebSearchBusy(false)
+    }
+  }
+
+  const clearWebSearchKey = async (): Promise<void> => {
+    setWebSearchBusy(true)
+    setMessage('')
+    try {
+      const next = await onSaveWebSearch({ apiKey: null })
+      setWebSearchDraft(next)
+      setWebSearchKey('')
+      setMessage('已清除搜索 API Key')
+    } catch (saveError) {
+      setMessage(errorText(saveError))
+    } finally {
+      setWebSearchBusy(false)
+    }
+  }
+
+  const testWebSearch = async (): Promise<void> => {
+    setWebSearchBusy(true)
+    setMessage('')
+    setWebSearchResult(null)
+    try {
+      const result = await onTestWebSearch({
+        enabled: webSearchDraft.enabled,
+        provider: webSearchDraft.provider,
+        endpoint: webSearchDraft.endpoint,
+        maxResults: webSearchDraft.maxResults,
+        apiKey: webSearchKey.trim() ? webSearchKey.trim() : undefined
+      })
+      setWebSearchResult(result)
+    } catch (testError) {
+      setWebSearchResult({
+        ok: false,
+        provider: webSearchDraft.provider,
+        error: errorText(testError)
+      })
+    } finally {
+      setWebSearchBusy(false)
     }
   }
 
@@ -449,6 +597,131 @@ export function SettingsDialog({
     }
   }
 
+  const effectiveActiveProfileId =
+    settings?.api.profileId ||
+    settings?.profiles.find(
+      (profile) =>
+        profile.baseUrl === settings.api.baseUrl &&
+        profile.model === settings.api.model
+    )?.id
+  const activeProfile =
+    settings?.profiles.find((profile) => profile.id === effectiveActiveProfileId) || null
+  const editingProfile = editingProfileId
+    ? settings?.profiles.find((profile) => profile.id === editingProfileId) || null
+    : null
+  const openNewApiForm = (): void => {
+    const api = settings?.api
+    const nextProviderId =
+      api?.providerId || findProviderPreset(api?.baseUrl)?.id || 'custom'
+    setEditingProfileId(null)
+    setProfileName('')
+    setProviderId(nextProviderId)
+    setBaseUrl(api?.baseUrl || '')
+    setModel(api?.model || '')
+    setAuthMode(api?.authMode || (nextProviderId === 'anthropic' ? 'apiKey' : 'bearer'))
+    setToken('')
+    setTestResult(null)
+    setMessage('')
+    setApiFormOpen(true)
+  }
+
+  const openEditApiProfile = (profile: ApiProfile): void => {
+    const nextProviderId =
+      profile.providerId || findProviderPreset(profile.baseUrl)?.id || 'custom'
+    setEditingProfileId(profile.id)
+    setProfileName(profile.name)
+    setProviderId(nextProviderId)
+    setBaseUrl(profile.baseUrl)
+    setModel(profile.model)
+    setAuthMode(
+      profile.authMode || (nextProviderId === 'anthropic' ? 'apiKey' : 'bearer')
+    )
+    setToken('')
+    setTestResult(null)
+    setMessage('')
+    setApiFormOpen(true)
+  }
+
+  const cancelApiForm = (): void => {
+    setApiFormOpen(false)
+    setEditingProfileId(null)
+    setProfileName('')
+    setToken('')
+    setTestResult(null)
+    setMessage('')
+  }
+
+  const saveApiForm = async (): Promise<void> => {
+    if (savingApi) return
+    if (!baseUrl.trim() || !model.trim() || formNeedsToken) return
+    setSavingApi(true)
+    setMessage('')
+    try {
+      const before = new Set((settings?.profiles || []).map((profile) => profile.id))
+      const name =
+        profileName.trim() ||
+        `${providerDisplayName(providerId)} ${model.trim() || '订阅'}`
+      const next = await onSaveApiProfile({
+        id: editingProfileId || undefined,
+        name,
+        baseUrl: baseUrl.trim(),
+        model: model.trim(),
+        token: token.trim() || undefined,
+        providerId,
+        authMode
+      })
+      const target =
+        editingProfileId || next.find((profile) => !before.has(profile.id))?.id
+      if (!target) throw new Error('配置保存失败')
+      await onApplyApiProfile(target, !activeTab?.state.running)
+      setApiFormOpen(false)
+      setEditingProfileId(null)
+      setProfileName('')
+      setToken('')
+      setTestResult(null)
+      setMessage('配置已保存并设为当前；新会话生效')
+    } catch (error) {
+      setMessage(errorText(error))
+    } finally {
+      setSavingApi(false)
+    }
+  }
+
+  const canSave =
+    tab === 'general' ||
+    tab === 'permissions' ||
+    (tab === 'api' && apiFormOpen)
+  const saving = tab === 'api' ? savingApi : savingPrefs
+
+  const saveCurrent = async (): Promise<void> => {
+    if (tab === 'general') {
+      await savePrefs()
+      await saveWebSearch()
+    } else if (tab === 'api') {
+      await saveApiForm()
+    } else if (tab === 'permissions') {
+      await savePermissions()
+    }
+  }
+  const saveCurrentRef = useRef(saveCurrent)
+  saveCurrentRef.current = saveCurrent
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        if (canSave) void saveCurrentRef.current()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [canSave, onClose])
+
   return (
     <div className="modal-backdrop" role="presentation">
       <div className="settings-shell" role="dialog" aria-modal="true" aria-label="设置">
@@ -485,11 +758,30 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <div className="settings-content">
-          <button type="button" className="dialog-close" onClick={onClose} aria-label="关闭">
-            <X size={16} />
-          </button>
+        <div className="settings-content-wrap">
+          <div className="settings-topbar">
+            {canSave && (
+              <button
+                type="button"
+                className="button primary settings-save-top"
+                disabled={saving}
+                onClick={() => void saveCurrent()}
+              >
+                <Save size={14} /> 保存
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-button settings-close"
+              onClick={onClose}
+              aria-label="关闭"
+              title="关闭设置（Esc）"
+            >
+              <X size={16} />
+            </button>
+          </div>
 
+          <div className="settings-content">
           {tab === 'general' && (
             <div className="settings-page">
               <h3>常规</h3>
@@ -512,6 +804,32 @@ export function SettingsDialog({
                       </button>
                     )
                   })}
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <span className="settings-label">配色风格</span>
+                <div className="palette-grid">
+                  {PALETTES.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`palette-option palette-${option.id} ${
+                        (preferences.palette || 'claude') === option.id ? 'is-active' : ''
+                      }`}
+                      onClick={() =>
+                        setPreferences((value) => ({
+                          ...value,
+                          palette: option.id,
+                          accent: PALETTE_ACCENTS[option.id]
+                        }))
+                      }
+                    >
+                      <span className="palette-preview" />
+                      <strong>{option.label}</strong>
+                      <small>{option.hint}</small>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -646,7 +964,7 @@ export function SettingsDialog({
               <div className="settings-group">
                 <span className="settings-label">强调色</span>
                 <div className="accent-row">
-                  {(['coral', 'blue', 'green', 'purple'] as const).map((accent) => (
+                  {PRESET_ACCENTS.map((accent) => (
                     <button
                       key={accent}
                       type="button"
@@ -659,6 +977,23 @@ export function SettingsDialog({
                       aria-label={accent}
                     />
                   ))}
+                  <label className="accent-custom" title="自定义强调色">
+                    <input
+                      type="color"
+                      value={
+                        /^#[0-9a-f]{6}$/i.test(preferences.accent)
+                          ? preferences.accent
+                          : ACCENT_HEX[preferences.accent] || '#d97757'
+                      }
+                      onChange={(event) =>
+                        setPreferences((value) => ({
+                          ...value,
+                          accent: event.target.value
+                        }))
+                      }
+                    />
+                    <span>自定义</span>
+                  </label>
                 </div>
               </div>
 
@@ -760,6 +1095,157 @@ export function SettingsDialog({
               </div>
 
               <div className="settings-group">
+                <span className="settings-label">联网搜索（新会话生效）</span>
+                <label className="toggle-row">
+                  <div>
+                    <strong>启用内置联网搜索</strong>
+                    <small>
+                      通过应用内置的 MCP 工具搜索网页；第三方 Anthropic 兼容接口也能使用。
+                    </small>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={webSearchDraft.enabled}
+                    onChange={(event) => {
+                      setWebSearchDraft((value) => ({
+                        ...value,
+                        enabled: event.target.checked
+                      }))
+                      setWebSearchResult(null)
+                    }}
+                  />
+                </label>
+                <div className="settings-row">
+                  <span>搜索服务</span>
+                  <select
+                    className="text-input web-search-select"
+                    value={webSearchDraft.provider}
+                    onChange={(event) => {
+                      setWebSearchDraft((value) => ({
+                        ...value,
+                        provider: event.target.value as WebSearchSettings['provider']
+                      }))
+                      setWebSearchResult(null)
+                    }}
+                  >
+                    {WEB_SEARCH_PROVIDERS.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="settings-note">
+                  {WEB_SEARCH_PROVIDERS.find((item) => item.id === webSearchDraft.provider)?.hint}
+                </p>
+                {!webSearchUsable && (
+                  <p className="settings-note settings-note-warn">
+                    当前配置不完整，新会话不会启用内置搜索；请填写实例地址或 API Key。
+                  </p>
+                )}
+                {(webSearchDraft.provider === 'searxng' ||
+                  webSearchDraft.provider === 'tavily' ||
+                  webSearchDraft.provider === 'brave') && (
+                  <div className="settings-row">
+                    <span>{webSearchDraft.provider === 'searxng' ? '实例地址' : '接口地址（可选）'}</span>
+                    <input
+                      className="text-input"
+                      value={webSearchDraft.endpoint}
+                      placeholder={
+                        webSearchDraft.provider === 'searxng'
+                          ? 'https://searx.example.com'
+                          : '留空使用官方地址'
+                      }
+                      spellCheck={false}
+                      onChange={(event) =>
+                        setWebSearchDraft((value) => ({
+                          ...value,
+                          endpoint: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {(webSearchDraft.provider === 'tavily' ||
+                  webSearchDraft.provider === 'brave' ||
+                  webSearchDraft.provider === 'searxng') && (
+                  <div className="settings-row">
+                    <span>API Key</span>
+                    <input
+                      className="text-input"
+                      type="password"
+                      value={webSearchKey}
+                      placeholder={
+                        webSearchDraft.hasApiKey
+                          ? `已保存：${webSearchDraft.apiKeyMasked}`
+                          : '可选，部分实例需要'
+                      }
+                      spellCheck={false}
+                      onChange={(event) => setWebSearchKey(event.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="settings-row">
+                  <span>每次结果数</span>
+                  <input
+                    className="text-input web-search-count"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={webSearchDraft.maxResults}
+                    onChange={(event) =>
+                      setWebSearchDraft((value) => ({
+                        ...value,
+                        maxResults: Math.min(10, Math.max(1, Number(event.target.value) || 6))
+                      }))
+                    }
+                  />
+                </div>
+                {webSearchDraft.hasApiKey && (
+                  <button
+                    type="button"
+                    className="mini-button"
+                    disabled={webSearchBusy}
+                    onClick={() => void clearWebSearchKey()}
+                  >
+                    清除已保存的 Key
+                  </button>
+                )}
+                <div className="settings-inline-actions">
+                  <button
+                    type="button"
+                    className="button ghost"
+                    disabled={webSearchBusy}
+                    onClick={() => void testWebSearch()}
+                  >
+                    <Search size={14} /> {webSearchBusy ? '测试中…' : '测试搜索'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={webSearchBusy}
+                    onClick={() => void saveWebSearch()}
+                  >
+                    <Save size={14} /> 保存搜索设置
+                  </button>
+                </div>
+                {webSearchResult && (
+                  <div className={webSearchResult.ok ? 'settings-message' : 'settings-error'}>
+                    {webSearchResult.ok ? (
+                      <>
+                        <span>{`连接成功，返回 ${webSearchResult.count || 0} 条结果`}</span>
+                        {webSearchResult.results?.[0] && (
+                          <span> — {webSearchResult.results[0].title}</span>
+                        )}
+                      </>
+                    ) : (
+                      webSearchResult.error || '搜索测试失败'
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="settings-group">
                 <span className="settings-label">会话预算上限</span>
                 <div className="inline-field">
                   <span>$</span>
@@ -833,351 +1319,417 @@ export function SettingsDialog({
             <div className="settings-page">
               <h3>API 配置</h3>
               <p className="settings-page-sub">
-                选择供应商，填写密钥与模型。配置写入 ~/.claude/settings.json，密钥只保存在本机。
+                管理订阅和 API 配置。默认显示列表，点击“添加新配置”再展开编辑表单。
               </p>
-                <p className="settings-note">
-                  只有 API 密钥也可以：填好密钥后点“测试并获取模型”，应用会读取模型列表或自动尝试常见模型。
-                </p>
-                {providerId === 'custom' && (
-                  <p className="settings-note">
-                    自定义供应商如果没有模型列表，需要填写供应商文档中的模型 ID。
-                  </p>
-                )}
 
-              <div className="settings-group">
-                <span className="settings-label">供应商</span>
-                <div className="provider-grid">
-                  {PROVIDER_PRESETS.map((preset) => (
+              {!apiFormOpen ? (
+                <>
+                  <div className="api-current-card">
+                    <div className="api-current-copy">
+                      <span className="settings-label">当前配置</span>
+                      <strong>
+                        {providerDisplayName(
+                          settings?.api.providerId || settings?.api.baseUrl
+                        )}
+                      </strong>
+                      <small>
+                        {settings?.api.model || '未选择模型'} ·{' '}
+                        {settings?.api.baseUrl || '—'}
+                      </small>
+                      <small>
+                        {settings?.api.hasToken
+                          ? `Token ${settings.api.tokenMasked}`
+                          : '未配置 Token'}
+                      </small>
+                    </div>
+                    <div className="api-current-actions">
+                      <button
+                        type="button"
+                        className="button primary"
+                        onClick={openNewApiForm}
+                      >
+                        <Plus size={14} /> 添加新配置
+                      </button>
+                      <button
+                        type="button"
+                        className="button ghost"
+                        onClick={() =>
+                          activeProfile
+                            ? openEditApiProfile(activeProfile)
+                            : openNewApiForm()
+                        }
+                      >
+                        编辑当前配置
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">已保存的配置</span>
+                    <div className="directory-list">
+                      {(settings?.profiles || []).length === 0 && (
+                        <span className="settings-empty">
+                          还没有保存的配置。点击“添加新配置”开始。
+                        </span>
+                      )}
+                      {[...(settings?.profiles || [])].reverse().map((profile) => {
+                        const active = profile.id === effectiveActiveProfileId
+                        return (
+                          <div key={profile.id} className="directory-row">
+                            <div className="profile-copy">
+                              <strong>
+                                <span data-i18n-skip>{profile.name}</span>
+                                {active && (
+                                  <span className="profile-active">当前</span>
+                                )}
+                              </strong>
+                              <small>
+                                {providerDisplayName(
+                                  profile.providerId || profile.baseUrl
+                                )}{' '}
+                                · {profile.model} · {profile.baseUrl}
+                              </small>
+                              <small>
+                                {profile.hasToken
+                                  ? `Token ${profile.tokenMasked}`
+                                  : '未配置 Token'}
+                              </small>
+                            </div>
+                            <button
+                              type="button"
+                              className="mini-button"
+                              disabled={active}
+                              onClick={async () => {
+                                try {
+                                  await onApplyApiProfile(profile.id)
+                                  setMessage(`已切换到配置「${profile.name}」`)
+                                } catch (error) {
+                                  setMessage(errorText(error))
+                                }
+                              }}
+                            >
+                              {active ? '当前' : '切换'}
+                            </button>
+                            <button
+                              type="button"
+                              className="mini-button"
+                              onClick={() => openEditApiProfile(profile)}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label="删除配置"
+                              onClick={() => void onDeleteApiProfile(profile.id)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {message && <div className="settings-message">{message}</div>}
+                </>
+              ) : (
+                <>
+                  <div className="api-form-head">
+                    <div>
+                      <h4>{editingProfileId ? '编辑配置' : '添加新配置'}</h4>
+                      <p className="settings-page-sub">
+                        {editingProfileId
+                          ? 'Token 留空表示保留原 Token。'
+                          : '填写供应商和 Token，保存后会设为当前配置。'}
+                      </p>
+                    </div>
                     <button
-                      key={preset.id}
                       type="button"
-                      className={`provider-card ${providerId === preset.id ? 'is-active' : ''}`}
-                      onClick={() => selectProvider(preset)}
-                      title={preset.baseUrl || preset.description}
+                      className="button ghost"
+                      onClick={cancelApiForm}
                     >
-                      <strong>{preset.name}</strong>
-                      <small>{preset.description}</small>
+                      取消
                     </button>
-                  ))}
-                </div>
-                <p className="settings-note">
-                  需要兼容 Anthropic Messages API；自定义供应商请填写其 Anthropic 兼容地址。
-                </p>
-              </div>
+                  </div>
 
-              <div className="settings-group">
-                <span className="settings-label">配置档案</span>
-                <div className="directory-list">
-                  {(settings?.profiles || []).length === 0 && (
-                    <span className="settings-empty">还没有保存的配置档案。</span>
-                  )}
-                  {(settings?.profiles || []).map((profile) => (
-                    <div key={profile.id} className="directory-row">
-                      <div className="profile-copy">
-                        <strong>{profile.name}</strong>
-                        <small>
-                          {providerDisplayName(profile.providerId || profile.baseUrl)} ·{' '}
-                          {profile.model} · {profile.baseUrl}
-                        </small>
-                      </div>
+                  <div className="settings-group">
+                    <span className="settings-label">配置名称</span>
+                    <input
+                      className="text-input"
+                      value={profileName}
+                      placeholder="例如 Claude-Pro、公司账号"
+                      onChange={(event) => setProfileName(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">供应商</span>
+                    <div className="provider-grid">
+                      {PROVIDER_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={`provider-card ${providerId === preset.id ? 'is-active' : ''}`}
+                          onClick={() => selectProvider(preset)}
+                          title={preset.baseUrl || preset.description}
+                        >
+                          <strong>{preset.name}</strong>
+                          <small>{preset.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="settings-note">
+                      需要兼容 Anthropic Messages API；自定义供应商请填写其 Anthropic 兼容地址。
+                    </p>
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">Base URL</span>
+                    <input
+                      className="text-input"
+                      value={baseUrl}
+                      spellCheck={false}
+                      placeholder="https://api.example.com 或 Anthropic 兼容端点"
+                      onChange={(event) => {
+                        const next = event.target.value
+                        setBaseUrl(next)
+                        const preset = findProviderPreset(next)
+                        setProviderId(preset?.id || 'custom')
+                        if (preset) setAuthMode(preset.authMode || 'bearer')
+                        setTestResult(null)
+                      }}
+                    />
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">认证方式</span>
+                    <div className="segmented">
+                      <button
+                        type="button"
+                        className={`segment ${authMode === 'bearer' ? 'is-active' : ''}`}
+                        onClick={() => setAuthMode('bearer')}
+                      >
+                        Bearer
+                      </button>
+                      <button
+                        type="button"
+                        className={`segment ${authMode === 'apiKey' ? 'is-active' : ''}`}
+                        onClick={() => setAuthMode('apiKey')}
+                      >
+                        x-api-key
+                      </button>
+                    </div>
+                    <p className="settings-note">
+                      Bearer 使用 Authorization 头；x-api-key 使用 X-Api-Key 头。
+                    </p>
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">API Token</span>
+                    <input
+                      className="text-input"
+                      type="password"
+                      value={token}
+                      spellCheck={false}
+                      placeholder={
+                        editingProfile?.hasToken
+                          ? `已保存：${editingProfile.tokenMasked}（留空保持不变）`
+                          : 'API Key / Token'
+                      }
+                      onChange={(event) => setToken(event.target.value)}
+                    />
+                    {(providerId === 'ollama' || isLocalUrl) && (
+                      <p className="settings-note">
+                        Ollama 等本地服务没有密钥时，可填写任意占位值。
+                      </p>
+                    )}
+                    {formNeedsToken && (
+                      <p className="settings-note settings-note-warn">
+                        新配置需要填写该供应商的 Token。
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">默认模型</span>
+                    <input
+                      className="text-input"
+                      value={model}
+                      spellCheck={false}
+                      list="model-options"
+                      onChange={(event) => setModel(event.target.value)}
+                    />
+                    <datalist id="model-options">
+                      {visibleModels.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </datalist>
+                    <p className="settings-note">
+                      不知道模型？先点“测试并获取模型”，或直接填写供应商文档中的模型 ID。
+                    </p>
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">模型列表</span>
+                    <div className="settings-rows model-list">
+                      {visibleModels.length === 0 && (
+                        <span className="settings-empty">还没有可用模型。</span>
+                      )}
+                      {visibleModels.slice(0, 40).map((option) => (
+                        <button
+                          type="button"
+                          className={`settings-row model-row ${
+                            model === option.id ? 'is-active' : ''
+                          }`}
+                          key={option.id}
+                          title="选择此模型"
+                          onClick={() => setModel(option.id)}
+                        >
+                          <span>{option.name}</span>
+                          <strong>
+                            {option.id}
+                            {option.contextWindow
+                              ? ` · ${formatTokens(option.contextWindow)}`
+                              : ''}
+                          </strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-group">
+                    <span className="settings-label">自定义模型</span>
+                    <div className="model-form">
+                      <input
+                        className="text-input"
+                        value={customModelId}
+                        placeholder="模型 ID（必填）"
+                        onChange={(event) => setCustomModelId(event.target.value)}
+                      />
+                      <input
+                        className="text-input"
+                        value={customModelName}
+                        placeholder="显示名称（可选）"
+                        onChange={(event) => setCustomModelName(event.target.value)}
+                      />
+                      <input
+                        className="text-input"
+                        type="number"
+                        min={1}
+                        value={customModelContext}
+                        placeholder="上下文窗口（可选）"
+                        onChange={(event) => setCustomModelContext(event.target.value)}
+                      />
                       <button
                         type="button"
                         className="mini-button"
-                        onClick={() => void onApplyApiProfile(profile.id)}
+                        disabled={!customModelId.trim() || customBusy}
+                        onClick={() => void addCustomModel()}
                       >
-                        应用
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="删除配置"
-                        onClick={() => void onDeleteApiProfile(profile.id)}
-                      >
-                        <X size={13} />
+                        <Plus size={13} /> 添加模型
                       </button>
                     </div>
-                  ))}
-                </div>
-                <div className="extension-actions">
-                  <input
-                    className="text-input"
-                    value={profileName}
-                    placeholder="配置名称，例如 我的供应商"
-                    onChange={(event) => setProfileName(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="mini-button"
-                    disabled={!profileName.trim()}
-                    onClick={async () => {
-                      await onSaveApiProfile({
-                        name: profileName.trim(),
-                        baseUrl,
-                        model,
-                        token: token || undefined,
-                        providerId,
-                        authMode
-                      })
-                      setProfileName('')
-                      setMessage('配置档案已保存')
-                    }}
-                  >
-                    <Save size={13} /> 保存当前为档案
-                  </button>
-                </div>
-              </div>
+                    {providerModels.length > 0 && (
+                      <div className="directory-list">
+                        {providerModels.map((entry) => (
+                          <div
+                            className="directory-row"
+                            key={`${entry.providerId || ''}-${entry.id}`}
+                          >
+                            <div className="profile-copy">
+                              <strong>{entry.name || entry.id}</strong>
+                              <small>
+                                {entry.id}
+                                {entry.contextWindow
+                                  ? ` · ${formatTokens(entry.contextWindow)}`
+                                  : ''}
+                              </small>
+                            </div>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label="删除模型"
+                              disabled={customBusy}
+                              onClick={() => void removeCustomModel(entry)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-              <div className="settings-group">
-                <span className="settings-label">Base URL</span>
-                <input
-                  className="text-input"
-                  value={baseUrl}
-                  spellCheck={false}
-                  placeholder="https://api.example.com 或 Anthropic 兼容端点"
-                  onChange={(event) => {
-                    const next = event.target.value
-                    setBaseUrl(next)
-                    const preset = findProviderPreset(next)
-                    setProviderId(preset?.id || 'custom')
-                    if (preset) setAuthMode(preset.authMode || 'bearer')
-                    setTestResult(null)
-                  }}
-                />
-              </div>
-
-              <div className="settings-group">
-                <span className="settings-label">认证方式</span>
-                <div className="segmented">
-                  <button
-                    type="button"
-                    className={`segment ${authMode === 'bearer' ? 'is-active' : ''}`}
-                    onClick={() => setAuthMode('bearer')}
-                  >
-                    Bearer
-                  </button>
-                  <button
-                    type="button"
-                    className={`segment ${authMode === 'apiKey' ? 'is-active' : ''}`}
-                    onClick={() => setAuthMode('apiKey')}
-                  >
-                    x-api-key
-                  </button>
-                </div>
-                <p className="settings-note">
-                  Bearer 使用 Authorization 头；x-api-key 使用 X-Api-Key 头。
-                </p>
-              </div>
-
-              <div className="settings-group">
-                <span className="settings-label">API Token</span>
-                <input
-                  className="text-input"
-                  type="password"
-                  value={token}
-                  spellCheck={false}
-                  placeholder={
-                    settings?.api.hasToken
-                      ? `已保存：${settings.api.tokenMasked}（留空保持不变）`
-                      : 'API Key / Token'
-                  }
-                  onChange={(event) => setToken(event.target.value)}
-                />
-                {settings?.api.hasToken && providerId !== settings.api.providerId && (
-                  <p className="settings-note">
-                    切换供应商后请填写新供应商的密钥。
-                  </p>
-                )}
-                {(providerId === 'ollama' || isLocalUrl) && (
-                  <p className="settings-note">
-                    Ollama 等本地服务没有密钥时，可填写任意占位值。
-                  </p>
-                )}
-              </div>
-
-              <div className="settings-group">
-                <span className="settings-label">默认模型</span>
-                <input
-                  className="text-input"
-                  value={model}
-                  spellCheck={false}
-                  list="model-options"
-                  onChange={(event) => setModel(event.target.value)}
-                />
-                <datalist id="model-options">
-                  {visibleModels.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </datalist>
-                <p className="settings-note">
-                  不知道模型？先点“测试并获取模型”。
-                </p>
-              </div>
-
-              <div className="settings-group">
-                <span className="settings-label">模型列表</span>
-                <div className="settings-rows model-list">
-                  {visibleModels.length === 0 && (
-                    <span className="settings-empty">还没有可用模型。</span>
-                  )}
-                  {visibleModels.slice(0, 40).map((option) => (
+                  <div className="settings-inline-actions">
                     <button
                       type="button"
-                      className={`settings-row model-row ${
-                        model === option.id ? 'is-active' : ''
-                      }`}
-                      key={option.id}
-                      title="选择此模型"
-                      onClick={() => setModel(option.id)}
+                      className="button ghost"
+                      onClick={() => selectProvider(PROVIDER_PRESETS[0])}
                     >
-                      <span>{option.name}</span>
-                      <strong>
-                        {option.id}
-                        {option.contextWindow
-                          ? ` · ${formatTokens(option.contextWindow)}`
-                          : ''}
-                      </strong>
+                      恢复默认供应商
                     </button>
-                  ))}
-                </div>
-                <p className="settings-note">
-                  点击“测试连接”尝试读取供应商模型列表；不支持列表的供应商会改用当前模型验证。
-                </p>
-              </div>
-
-              <div className="settings-group">
-                <span className="settings-label">自定义模型</span>
-                <div className="model-form">
-                  <input
-                    className="text-input"
-                    value={customModelId}
-                    placeholder="模型 ID（必填）"
-                    onChange={(event) => setCustomModelId(event.target.value)}
-                  />
-                  <input
-                    className="text-input"
-                    value={customModelName}
-                    placeholder="显示名称（可选）"
-                    onChange={(event) => setCustomModelName(event.target.value)}
-                  />
-                  <input
-                    className="text-input"
-                    type="number"
-                    min={1}
-                    value={customModelContext}
-                    placeholder="上下文窗口（可选）"
-                    onChange={(event) => setCustomModelContext(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="mini-button"
-                    disabled={!customModelId.trim() || customBusy}
-                    onClick={() => void addCustomModel()}
-                  >
-                    <Plus size={13} /> 添加模型
-                  </button>
-                </div>
-                {providerModels.length > 0 && (
-                  <div className="directory-list">
-                    {providerModels.map((entry) => (
-                      <div
-                        className="directory-row"
-                        key={`${entry.providerId || ''}-${entry.id}`}
+                    {provider?.consoleUrl && (
+                      <button
+                        type="button"
+                        className="button ghost"
+                        onClick={() => onOpenConsole(provider.id)}
                       >
-                        <div className="profile-copy">
-                          <strong>{entry.name || entry.id}</strong>
-                          <small>
-                            {entry.id}
-                            {entry.contextWindow
-                              ? ` · ${formatTokens(entry.contextWindow)}`
-                              : ''}
-                          </small>
-                        </div>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label="删除模型"
-                          disabled={customBusy}
-                          onClick={() => void removeCustomModel(entry)}
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ))}
+                        <ExternalLink size={14} /> {provider.name} 控制台
+                      </button>
+                    )}
                   </div>
-                )}
-                <p className="settings-note">
-                  供应商列表里没有的模型可以手动添加；上下文窗口留空时由供应商或引擎决定。
-                </p>
-              </div>
 
-              <div className="settings-inline-actions">
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => selectProvider(PROVIDER_PRESETS[0])}
-                >
-                  恢复默认供应商
-                </button>
-                {provider?.consoleUrl && (
-                  <button
-                    type="button"
-                    className="button ghost"
-                    onClick={() => onOpenConsole(provider.id)}
-                  >
-                    <ExternalLink size={14} /> {provider.name} 控制台
-                  </button>
-                )}
-              </div>
-
-              {testResult && (
-                <div className={`settings-message ${testResult.ok ? '' : 'is-error'}`}>
-                  {testResult.ok ? (
-                    testResult.discoveredModel ? (
-                      <>连接成功，已自动检测到模型 {testResult.discoveredModel}</>
-                    ) : testResult.via === 'messages' ? (
-                      '连接成功（供应商未提供模型列表，已用当前模型验证）'
-                    ) : (
-                      <>连接成功，可用模型 {testResult.modelCount ?? 0}</>
-                    )
-                  ) : (
-                    `连接失败：${testResult.error || '未知错误'}`
+                  {testResult && (
+                    <div
+                      className={`settings-message ${testResult.ok ? '' : 'is-error'}`}
+                    >
+                      {testResult.ok ? (
+                        testResult.discoveredModel ? (
+                          <>连接成功，已自动检测到模型 {testResult.discoveredModel}</>
+                        ) : testResult.via === 'messages' ? (
+                          '连接成功（供应商未提供模型列表，已用当前模型验证）'
+                        ) : (
+                          <>连接成功，可用模型 {testResult.modelCount ?? 0}</>
+                        )
+                      ) : (
+                        `连接失败：${testResult.error || '未知错误'}`
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-              {message && <div className="settings-message">{message}</div>}
+                  {message && <div className="settings-message">{message}</div>}
 
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="button ghost"
-                  disabled={testing}
-                  onClick={() => void test()}
-                >
-                  <RefreshCw size={14} className={testing ? 'spin-icon' : ''} />
-                  {testing ? '测试中…' : '测试并获取模型'}
-                </button>
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={
-                    savingApi ||
-                    !baseUrl.trim() ||
-                    !model.trim() ||
-                    providerNeedsToken
-                  }
-                  title={
-                    !model.trim() ? '请先选择或填写模型' : undefined
-                  }
-                  onClick={() => void saveApi()}
-                >
-                  <Save size={14} /> 保存 API 配置
-                </button>
-              </div>
-              <p className="settings-note">
-                修改后只影响新启动的会话；当前会话继续使用启动时的配置。
-              </p>
+                  <div className="settings-actions">
+                    <button
+                      type="button"
+                      className="button ghost"
+                      disabled={testing}
+                      onClick={() => void test()}
+                    >
+                      <RefreshCw size={14} className={testing ? 'spin-icon' : ''} />
+                      {testing ? '测试中…' : '测试并获取模型'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={
+                        savingApi ||
+                        !baseUrl.trim() ||
+                        !model.trim() ||
+                        formNeedsToken
+                      }
+                      title={!model.trim() ? '请先选择或填写模型' : undefined}
+                      onClick={() => void saveApiForm()}
+                    >
+                      <Save size={14} /> 保存配置
+                    </button>
+                  </div>
+                  <p className="settings-note">
+                    保存后会设为当前配置；空闲会话会立即切换并保留上下文，运行中的会话继续原进程，新会话生效。
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -1318,6 +1870,8 @@ export function SettingsDialog({
             </div>
           )}
 
+          {tab === 'remote' && <RemotePanel defaults={defaults} />}
+
           {tab === 'about' && (
             <div className="settings-page">
               <h3>关于与更新</h3>
@@ -1341,6 +1895,7 @@ export function SettingsDialog({
               />
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

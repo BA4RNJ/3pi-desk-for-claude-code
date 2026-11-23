@@ -330,6 +330,9 @@ const DICTIONARY: Record<string, string> = {
   "其他答案（可选）": "Other answer (optional)",
   "可多选": "Select all that apply",
   "Claude 需要你的选择": "Claude needs your input",
+  "Claude 需要你的回答": "Claude needs your answer",
+  "需要你的回答": "needs your answer",
+  "等待回答": "Waiting for answer",
   "回答下面的问题后 Claude 会继续。": "Answer the questions to continue.",
   "这个提问没有可显示的问题数据。": "This question has no displayable options.",
   "把 Claude 在该消息之后修改的文件恢复到当时的状态。": "Restore files changed by Claude after this message.",
@@ -575,7 +578,233 @@ Object.assign(DICTIONARY, {
   '检查引擎安装状态': 'Check engine installation',
   'AI 会话': 'AI chat',
   '已完成规划，批准后将开始执行。': 'Planning is complete; execution starts after approval.',
-  '已完成规划，批准后将开始执行': 'Planning is complete; execution starts after approval'
+  '已完成规划，批准后将开始执行': 'Planning is complete; execution starts after approval',
+  // Workspace search
+  '搜索工作区': 'Search workspace',
+  '搜索文件内容…': 'Search file contents…',
+  '搜索文件名…': 'Search file names…',
+  '内容': 'Content',
+  '文件名': 'File name',
+  '输入关键词开始搜索。': 'Type a keyword to search.',
+  '正在搜索…': 'Searching…',
+  '没有匹配结果。': 'No matches.',
+  '快捷键：Ctrl/Cmd + Shift + F 打开内容搜索，Ctrl/Cmd + P 打开文件名搜索。':
+    'Shortcuts: Ctrl/Cmd + Shift + F for content search, Ctrl/Cmd + P for file name search.',
+  '搜索工作区（Ctrl/Cmd + Shift + F）': 'Search workspace (Ctrl/Cmd + Shift + F)',
+  // Command palette
+  '命令面板': 'Command palette',
+  '输入命令…': 'Type a command…',
+  '没有匹配的命令。': 'No matching commands.',
+  '斜杠命令': 'Slash commands',
+  '部分交互式命令（如打开终端面板或选择器）在无头环境中不可用。':
+    'Some interactive commands (terminal panels or pickers) are unavailable in the headless environment.',
+  '压缩当前上下文': 'Compact the current context',
+  '清空当前会话上下文': 'Clear the current chat context',
+  '查看当前会话状态': 'Show the current chat status',
+  '查看上下文占用明细': 'Show context usage details',
+  '查看本次会话用量与费用': 'Show usage and cost for this chat',
+  '为项目生成 CLAUDE.md': 'Generate CLAUDE.md for the project',
+  '审查当前改动或 PR': 'Review current changes or a PR',
+  '回退文件或对话': 'Rewind files or the conversation',
+  '查看或切换模型': 'View or switch models',
+  '查看 MCP 服务器状态': 'Show MCP server status',
+  '查看子代理': 'Show subagents',
+  '查看可用技能': 'Show available skills',
+  '查看已配置 Hooks': 'Show configured hooks',
+  '查看帮助': 'Show help',
+  '搜索文件内容': 'Search file contents',
+  '搜索文件名': 'Search file names',
+  '关闭文件面板': 'Close file panel',
+  '打开文件面板': 'Open file panel',
+  '打开设置': 'Open settings',
+  '打开扩展设置': 'Open extension settings',
+  '导出当前对话为 Markdown': 'Export current chat as Markdown',
+  '打开会话备份目录': 'Open chat backup folder',
+  '刷新模型列表': 'Refresh model list',
+  '切换到中文': 'Switch to Chinese',
+  // Sidebar and composer
+  '加载更多会话': 'Load more chats',
+  '正在加载…': 'Loading…',
+  '加载更多搜索结果': 'Load more search results',
+  '运行中 · 发送将排队': 'Running · sending will queue',
+  '排队发送': 'Queue message',
+  '停止这个任务': 'Stop this task',
+  '停止': 'Stop',
+  // Extensions / MCP
+  '登录': 'Sign in',
+  '登录中…': 'Signing in…',
+  '重连': 'Reconnect',
+  '重新连接此 MCP 服务器': 'Reconnect this MCP server',
+  '来源：': 'Source: ',
+  '没有可用的工具信息。': 'No tool information available.',
+  '运行 claude mcp login': 'Run claude mcp login',
+  '联网搜索（内置）': 'Web search (built-in)',
+  '如果浏览器没有自动打开，请复制上方链接手动访问。':
+    'If the browser did not open, copy the link above and open it manually.',
+  '取消登录': 'Cancel sign-in',
+  '已取消登录': 'Sign-in cancelled',
+  '登录完成': 'Sign-in complete',
+  '登录未完成': 'Sign-in did not complete',
+  // Permission diffs
+  '改动预览': 'Change preview',
+  '允许后将按上方内容写入': 'Approved changes will be written as shown above',
+  '改动过大，仅显示前 200 KB。': 'The change is too large; only the first 200 KB is shown.',
+  '执行前需要你的许可。': 'This action needs your permission before it runs.',
+  '联网搜索': 'Web search',
+  // Web search settings
+  '联网搜索（新会话生效）': 'Web search (applies to new chats)',
+  '启用内置联网搜索': 'Enable built-in web search',
+  '通过应用内置的 MCP 工具搜索网页；第三方 Anthropic 兼容接口也能使用。':
+    'Search the web through the app built-in MCP tool; works with third-party Anthropic-compatible endpoints.',
+  '搜索服务': 'Search provider',
+  '实例地址': 'Instance URL',
+  '接口地址（可选）': 'API endpoint (optional)',
+  '留空使用官方地址': 'Leave empty to use the official endpoint',
+  '可选，部分实例需要': 'Optional; required by some instances',
+  '每次结果数': 'Results per search',
+  '清除已保存的 Key': 'Clear saved key',
+  '测试搜索': 'Test search',
+  '测试中…': 'Testing…',
+  '保存搜索设置': 'Save search settings',
+  '联网搜索设置已保存，新会话生效': 'Web search settings saved; applies to new chats',
+  '已清除搜索 API Key': 'Search API key cleared',
+  '搜索测试失败': 'Search test failed',
+  '当前配置不完整，新会话不会启用内置搜索；请填写实例地址或 API Key。':
+    'This configuration is incomplete; built-in search will not start in new chats. Enter an instance URL or API key.',
+  '无需密钥，适合直接开始；可能受频率限制。':
+    'No API key required; may be rate limited.',
+  '无需密钥；在 DuckDuckGo 受限的网络中可用。':
+    'No API key required; works on networks where DuckDuckGo is blocked.',
+  '无需密钥；适合中文网络和中文结果。':
+    'No API key required; suited to Chinese networks and Chinese results.',
+  '填写自建或可用的 SearXNG 地址，需开启 JSON 输出。':
+    'Enter a SearXNG instance URL with JSON output enabled.',
+  '需要 Tavily API Key，结果质量稳定。': 'Requires a Tavily API key.',
+  '需要 Brave Search API Key。': 'Requires a Brave Search API key.',
+  // Diagnostics and backups
+  '诊断与备份': 'Diagnostics & backups',
+  '导出诊断日志': 'Export diagnostics',
+  '刷新备份': 'Refresh backups',
+  '还没有会话备份。删除会话时应用会先写入备份。':
+    'No chat backups yet. The app writes a backup before deleting a chat.',
+  '备份仅包含 Claude Code 的会话记录，不会自动恢复或覆盖现有会话。诊断日志会自动脱敏常见的密钥格式。':
+    'Backups contain only Claude Code transcripts and never restore or overwrite chats automatically. Diagnostics redact common secret formats.',
+  '导出': 'Export',
+  '导出中…': 'Exporting…',
+  '预览': 'Preview',
+  // Project directory / project home
+  '项目': 'Projects',
+  '项目目录': 'Project directory',
+  '项目主页': 'Project home',
+  '返回项目主页': 'Back to project home',
+  '打开项目目录': 'Open project directory',
+  '搜索项目文件内容': 'Search project file contents',
+  '选择一个项目查看它的会话，或者添加新的项目文件夹。':
+    'Choose a project to see its chats, or add a new project folder.',
+  '添加项目': 'Add project',
+  '搜索项目…': 'Search projects…',
+  '没有匹配的项目。': 'No matching projects.',
+  '还没有项目。添加一个项目文件夹开始。': 'No projects yet. Add a project folder to begin.',
+  '从常用项目移除': 'Remove from recent projects',
+  '会话由本地引擎保存，应用不会自动删除会话。':
+    'Chats are saved by the local engine; the app never deletes them automatically.',
+  '正在读取…': 'Loading…',
+  '返回项目目录': 'Back to projects',
+  '新对话': 'New chat',
+  '搜索文件': 'Search files',
+  '在系统中打开项目文件夹': 'Open project folder in the system',
+  '刷新会话': 'Refresh chats',
+  '搜索这个项目的会话…': 'Search chats in this project…',
+  '没有匹配的会话。': 'No matching chats.',
+  '这个项目还没有会话，开始一个新对话吧。':
+    'This project has no chats yet. Start a new chat.',
+  '未命名会话': 'Untitled chat',
+  '复制/迁移': 'Copy/Move',
+  '复制或迁移到其他项目': 'Copy or move to another project',
+  '项目文件夹不存在': 'Project folder not found',
+  '文件夹可能已被重命名或移动。重新定位后会复制旧会话到新位置，原记录仍保留在本机。':
+    'The folder may have been renamed or moved. Relocating copies the old chats to the new location; the originals stay on this machine.',
+  '重新定位文件夹': 'Relocate folder',
+  '正在迁移…': 'Relocating…',
+  '该项目还有运行中的任务，请先停止后再重新定位。':
+    'This project still has a running task. Stop it before relocating.',
+  // Copy / move dialog
+  '复制 / 迁移会话': 'Copy / move chat',
+  '「复制」会生成一个独立的新会话；「迁移」会在目标项目生成新会话，并把原会话从列表中隐藏（原记录仍保留在本机）。':
+    '"Copy" creates an independent new chat; "Move" creates it in the target project and hides the original from the list (the original transcript stays on this machine).',
+  '当前会话': 'Current chat',
+  '目标项目': 'Target project',
+  '选择其他文件夹': 'Choose another folder',
+  '迁移中…': 'Moving…',
+  '迁移到目标项目': 'Move to target project',
+  '复制中…': 'Copying…',
+  '复制为独立会话': 'Copy as independent chat',
+  // Palette / accent
+  '配色风格': 'Colour palette',
+  '卡其暖色': 'Warm khaki',
+  'Claude Code 风格': 'Claude Code style',
+  '黑白': 'Monochrome',
+  '中性灰阶': 'Neutral greys',
+  '蓝白': 'Blue & white',
+  '冷色工作台': 'Cool workspace',
+  '绿白': 'Green & white',
+  '柔和护眼': 'Soft on the eyes',
+  '自定义强调色': 'Custom accent colour',
+  '自定义': 'Custom',
+  'AI 工作时长': 'AI work time',
+  '实时输出速率': 'Live output rate',
+  '需要你的确认': 'needs your approval',
+  '联网搜索已开启（新会话生效）': 'Web search is on (applies to new chats)',
+  '联网搜索已关闭（新会话生效）': 'Web search is off (applies to new chats)',
+  // Subscriptions / accounts
+  '订阅 / 账号': 'Subscriptions / accounts',
+  'API 配置 / 订阅': 'API configuration / subscriptions',
+  '模型': 'Model',
+  '管理订阅和 API 配置。默认显示列表，点击“添加新配置”再展开编辑表单。':
+    'Manage subscriptions and API configurations. The list is shown by default; click “Add configuration” to open the form.',
+  '当前配置': 'Current configuration',
+  '添加新配置': 'Add configuration',
+  '编辑当前配置': 'Edit current configuration',
+  '已保存的配置': 'Saved configurations',
+  '还没有保存的配置。点击“添加新配置”开始。':
+    'No saved configurations yet. Click “Add configuration” to start.',
+  '编辑配置': 'Edit configuration',
+  'Token 留空表示保留原 Token。': 'Leave Token empty to keep the existing token.',
+  '填写供应商和 Token，保存后会设为当前配置。':
+    'Choose a provider and enter a token; saving makes it the current configuration.',
+  '配置名称': 'Configuration name',
+  '问点什么，或描述要在这个项目中完成的任务…':
+    'Ask something, or describe a task for this project…',
+  '例如 Claude-Pro、公司账号': 'e.g. Claude-Pro or Work account',
+  '新配置需要填写该供应商的 Token。': 'A new configuration needs a token for this provider.',
+  '不知道模型？先点“测试并获取模型”，或直接填写供应商文档中的模型 ID。':
+    'Not sure which model? Test and fetch models, or enter the model ID from the provider docs.',
+  '保存配置': 'Save configuration',
+  '保存后会设为当前配置；空闲会话会立即切换并保留上下文，运行中的会话继续原进程，新会话生效。':
+    'Saving makes it the current configuration. An idle chat switches immediately with its context preserved; a running chat keeps its process and new chats use the new configuration.',
+  '配置已保存并设为当前；新会话生效':
+    'Configuration saved and set as current; applies to new chats.',
+  '配置保存失败': 'Could not save the configuration',
+  '未配置 Token': 'No token configured',
+  '删除配置': 'Delete configuration',
+  '同一个供应商可以保存多个订阅或 plan，每个档案使用自己的 token。也可以在模型下拉菜单中直接切换。切换会重启当前活动会话；其他新开会话使用新账号。':
+    'Save multiple subscriptions or plans for the same provider, each with its own token. You can also switch from the model dropdown. Switching restarts the active chat; other new chats use the new account.',
+  '还没有保存的订阅。': 'No saved subscriptions yet.',
+  '当前': 'Current',
+  '切换': 'Switch',
+  '删除订阅': 'Delete subscription',
+  '订阅名称，例如 GPT-Plus 或 Claude-Pro':
+    'Subscription name, e.g. GPT-Plus or Claude-Pro',
+  '保存为新订阅': 'Save as new subscription',
+  '订阅已保存': 'Subscription saved',
+  '更新当前订阅': 'Update current subscription',
+  '当前订阅已更新': 'Current subscription updated',
+  '还没有保存订阅': 'No saved subscriptions',
+  '去设置里添加多个 token / plan': 'Add multiple tokens / plans in Settings',
+  '管理订阅…': 'Manage subscriptions…',
+  '请先停止当前任务再切换订阅': 'Stop the current task before switching subscriptions.',
+  '切换订阅后重启会话失败：': 'The subscription switched, but restarting the chat failed: ',
+  '新消息将使用新账号': 'New messages will use the new account.'
 })
 
 const PUNCTUATION: Record<string, string> = {
@@ -600,12 +829,48 @@ const PHRASE_RULES: Array<[RegExp, string]> = [
   [/^(\d+)\s*个请求$/, '$1 requests'],
   [/^(\d+)\s*项任务$/, '$1 tasks'],
   [/^标签：(.+)$/, 'Tab: $1'],
+  [/^Claude 需要你的回答：(.+)$/, 'Claude needs your answer: $1'],
   [/^还有\s*(\d+)\s*个请求$/, 'and $1 pending requests'],
   [/^已恢复\s*(\d+)\s*个文件$/, 'Restored $1 files'],
   [/^已恢复$/, 'Restored'],
   [/^(\d+)\/(\d+)$/, '$1/$2'],
   [/^(\d+)% 已使用$/, '$1% used'],
-  [/^·\s*(\d[\d,]*)\s*次安装$/, '· $1 installs']
+  [/^·\s*(\d[\d,]*)\s*次安装$/, '· $1 installs'],
+  [/^运行中 · (\d+) 条排队$/, 'Running · $1 queued'],
+  [/^已切换到订阅「(.+)」$/, 'Switched to subscription "$1"'],
+  [/^已切换到配置「(.+)」$/, 'Switched to configuration "$1"'],
+  [/^已切换到订阅「(.+)」，新消息将使用新账号$/, 'Switched to subscription "$1"; new messages use the new account.'],
+  [/^(\d+) 条消息排队$/, '$1 messages queued'],
+  [/^(\d+)\+? 个会话$/, '$1 chats'],
+  [/^(\d+) 个会话 · 最近 (.+)$/, '$1 chats · last $2'],
+  [/^连接成功，返回 (\d+) 条结果$/, 'Connected; $1 results'],
+  [/^已导出到 (.+)$/, 'Exported to $1'],
+  [/^诊断日志已导出到 (.+)$/, 'Diagnostics exported to $1'],
+  [/^切换主题（当前：(.+)）$/, 'Switch theme (current: $1)'],
+  [
+    /^正在等待模型首 token… (\d+)s（上游响应慢时可继续等待或按停止）$/,
+    "Waiting for the model's first token… $1s (the upstream may be slow; keep waiting or press Stop)"
+  ],
+  [/^模型正在思考… (\d+)s$/, 'Model is thinking… $1s'],
+  [
+    /^像管理文件夹一样多层收纳项目（共 (\d+) 个项目路径已完整保留）。可拖拽项目到文件夹或逐级点开。$/,
+    'Organize projects in multi-level folders ($1 project paths preserved). Drag items into folders or click through.'
+  ],
+  [
+    /^(\d+) 个子文件夹 · (\d+) 个直属项目$/,
+    '$1 subfolders · $2 direct projects'
+  ],
+  [/^(\d+) 个项目$/, '$1 projects'],
+  [/^(\d+) 个项目 · (\d+) 个子文件夹$/, '$1 projects · $2 subfolders'],
+  [/^·\s*(\d+) 个子文件夹$/, '· $1 subfolders'],
+  [/^位于：(.+)$/, 'In: $1'],
+  [/^上级：(.+)$/, 'Parent: $1'],
+  [/^提问目录 \((\d+)\)$/, 'Prompts ($1)'],
+  [/^(\d+) 轮对话$/, '$1 turns'],
+  [/^(\d{4}-\d{2}-\d{2})（(\d+) 轮）$/, '$1 ($2 turns)'],
+  [/^局域网: (.+)$/, 'LAN: $1'],
+  [/^公网隧道: (.+)$/, 'Public tunnel: $1'],
+  [/^· 最新 (.+)$/, '· Latest $1']
 ]
 
 const SKIP_SELECTOR = [
@@ -648,6 +913,186 @@ const originals = new Map<Node, string>()
 const lastTranslated = new WeakMap<Node, string>()
 const attributeOriginals = new Map<Element, Map<string, string>>()
 const attributeTranslated = new WeakMap<Element, Map<string, string>>()
+
+Object.assign(DICTIONARY, {
+  // Remote access panel
+  '远程访问': 'Remote access',
+  '局域网访问': 'LAN access',
+  '启用远程访问': 'Enable remote access',
+  '端口': 'Port',
+  '绑定地址': 'Bind address',
+  '局域网（0.0.0.0）': 'LAN (0.0.0.0)',
+  '仅本机（配合隧道）': 'Localhost only (for tunnels)',
+  '账号': 'Username',
+  '密码': 'Password',
+  '已设置；输入新密码后点“修改密码”': 'Set; enter a new password and click "Change password"',
+  '设置登录密码': 'Set login password',
+  '修改密码': 'Change password',
+  '保存远程访问设置': 'Save remote access settings',
+  '局域网地址': 'LAN addresses',
+  '服务器尚未启动或没有检测到局域网 IPv4 地址。':
+    'The server is not running or no LAN IPv4 address was detected.',
+  '启用远程访问后这里会显示手机可访问的地址。':
+    'Once enabled, phone-accessible addresses appear here.',
+  '手机与电脑需在同一 Wi-Fi；如果打不开，请检查电脑防火墙是否放行该端口。':
+    'The phone and computer must be on the same Wi-Fi; if it does not load, check the computer firewall for this port.',
+  '模式': 'Mode',
+  'Quick Tunnel（临时地址）': 'Quick Tunnel (temporary URL)',
+  'Named Tunnel（固定域名）': 'Named Tunnel (stable hostname)',
+  'Tunnel 名称': 'Tunnel name',
+  '配置文件': 'Config file',
+  '公网域名': 'Public hostname',
+  '状态': 'Status',
+  '运行中': 'Running',
+  '未运行': 'Not running',
+  '停止隧道': 'Stop tunnel',
+  '启动隧道': 'Start tunnel',
+  '下载 cloudflared': 'Download cloudflared',
+  '刷新状态': 'Refresh status',
+  '未安装 cloudflared 时请先安装：': 'If cloudflared is not installed, install it first:',
+  '仅本机模式：局域网不可直接访问；请使用 Cloudflare Tunnel 或改为局域网绑定。':
+    'Localhost-only mode: the LAN cannot reach this server. Use Cloudflare Tunnel or switch the bind address to LAN.',
+  '请先启用远程访问并保存，再启动隧道。':
+    'Enable and save remote access before starting the tunnel.',
+  '已连接设备': 'Connected devices',
+  '暂无已连接设备。': 'No connected devices.',
+  '令牌与密码只保存在这台电脑的应用数据目录（0600）。手机端不会收到 API Token。关闭远程访问后所有浏览器连接会立即断开。':
+    'Tokens and passwords are stored only in the app data directory on this computer (0600). The phone never receives the API token. Disabling remote access disconnects all browser clients immediately.',
+  '你正在通过浏览器访问。端口、绑定地址、密码和隧道启停只能在电脑端修改。':
+    'You are accessing from a browser. Port, bind address, password, and tunnel controls can only be changed on the desktop.',
+  '如果使用 Cloudflare Access，请先在同一浏览器完成 Access 登录，再打开隧道地址；登录重定向可能丢失 URL 中的临时信息。':
+    'If using Cloudflare Access, complete the Access login in the same browser before opening the tunnel URL; the login redirect may drop temporary URL information.',
+  '登录密码已更新。下次登录请使用新密码。':
+    'Login password updated. Use the new password next time.',
+  '请输入新密码后再保存。': 'Enter a new password before saving.',
+  '远程访问设置已保存（密码未修改）。':
+    'Remote access settings saved (password unchanged).',
+  'Cloudflare Tunnel 已启动。': 'Cloudflare Tunnel started.',
+  '已发送启动请求，正在等待 cloudflared 输出公网地址。':
+    'Start requested; waiting for cloudflared to report a public URL.',
+  'Cloudflare Tunnel 已停止。': 'Cloudflare Tunnel stopped.',
+  '已复制。': 'Copied.',
+  '正在下载 cloudflared…': 'Downloading cloudflared…',
+  'cloudflared 已下载。': 'cloudflared downloaded.',
+  '远程访问等同于在这台电脑上执行 Claude Code 工具。请使用强密码；公网访问建议使用 Cloudflare Tunnel，并启用 Cloudflare Access。':
+    'Remote access is equivalent to running Claude Code tools on this computer. Use a strong password; for public access use Cloudflare Tunnel and enable Cloudflare Access.',
+  '在同一局域网用手机浏览器操控这台电脑上的 3PI Desk，或通过 Cloudflare Tunnel 从公网访问。应用必须保持运行。':
+    'Control 3PI Desk on this computer from a phone browser on the same LAN, or over the internet through Cloudflare Tunnel. The app must stay running.',
+  'Remote access': 'Remote access',
+  // Project home folders
+  '新建文件夹': 'New folder',
+  '新建子文件夹': 'New subfolder',
+  '自定义文件夹': 'Customize folder',
+  '自定义外观': 'Customize',
+  '移动位置': 'Move',
+  '删除文件夹': 'Delete folder',
+  '删除文件夹（保留内部所有项目）': 'Delete folder (keeps all projects inside)',
+  '全部项目': 'All projects',
+  '文件夹路径': 'Folder path',
+  '搜索所有文件夹与项目路径…': 'Search all folders and project paths…',
+  '清除搜索': 'Clear search',
+  '没有匹配的文件夹或项目。': 'No matching folders or projects.',
+  '这个文件夹还是空的。可以新建子文件夹，或把项目移进来。':
+    'This folder is empty. Create a subfolder or move projects here.',
+  '还没有项目。添加一个项目文件夹或新建收纳文件夹开始。':
+    'No projects yet. Add a project folder or create an organizing folder to start.',
+  '添加项目到此位置': 'Add project here',
+  '编辑名称、图标和颜色': 'Edit name, icon, and color',
+  '移动到其他文件夹': 'Move to another folder',
+  '收纳到文件夹': 'Move to folder',
+  '收纳项目到文件夹': 'Move project to folder',
+  '移动文件夹位置': 'Move folder',
+  '移动到文件夹': 'Move to folder',
+  '选择目标位置：': 'Select destination: ',
+  '根目录（全部项目）': 'Root (All projects)',
+  '位置：根目录（全部项目）': 'Location: Root (All projects)',
+  '当前位置': 'Current',
+  '未命名文件夹': 'Untitled folder',
+  '文件夹名称': 'Folder name',
+  '例如：前端项目、核心服务、实验': 'e.g. Frontend, Core Services, Experiments',
+  '所在位置（支持多层嵌套）': 'Parent folder (supports multi-level nesting)',
+  '像 ChatGPT 项目夹一样自定义名称、图标和颜色，并可放入任意上级文件夹实现多层收纳。':
+    'Customize the name, icon, and color like ChatGPT project folders, and nest inside any parent folder.',
+  '颜色': 'Color',
+  '图标': 'Icon',
+  '自定义': 'Custom',
+  '自定义颜色': 'Custom color',
+  '支持多层文件夹嵌套与拖拽归类；删除收纳文件夹时，内部项目会自动回到上一级，绝不会丢失路径。':
+    'Supports multi-level folder nesting and drag-and-drop; deleting a folder moves its projects up one level and never loses any path.',
+  '确定要删除文件夹「': 'Delete folder "',
+  '」吗？该文件夹内的所有子文件夹和项目路径都会自动移回上一级目录，不会删除任何项目或会话。':
+    '"? All subfolders and project paths inside will move up to the parent folder; no projects or chats will be deleted.',
+  '文件夹': 'Folder',
+  '代码': 'Code',
+  '终端': 'Terminal',
+  '工作': 'Work',
+  '文档': 'Docs',
+  '系统': 'System',
+  '数据': 'Data',
+  '架构': 'Layers',
+  '发布': 'Release',
+  '精选': 'Featured',
+  '偏好': 'Favorites',
+  '娱乐': 'Games',
+  '工具': 'Tools',
+  '安全': 'Security',
+  '珊瑚橘': 'Coral',
+  '琥珀黄': 'Amber',
+  '森林绿': 'Forest green',
+  '青碧色': 'Teal',
+  '海蔚蓝': 'Ocean blue',
+  '靛青色': 'Indigo',
+  '紫罗兰': 'Purple',
+  '玫红色': 'Pink',
+  '朱砂红': 'Red',
+  '岩石灰': 'Slate',
+  // In-chat search, timeline, failover, git, rewind diff, qr, usage history
+  '搜索对话': 'Search chat',
+  '会话内搜索': 'Search in chat',
+  '会话内搜索（Ctrl/Cmd + F）': 'Search in chat (Ctrl/Cmd + F)',
+  '在当前对话中搜索（Enter 下一个）…': 'Search in this chat (Enter for next)…',
+  '上一个匹配': 'Previous match',
+  '下一个匹配': 'Next match',
+  '关闭搜索': 'Close search',
+  '提问目录导航': 'Prompt timeline',
+  '本会话提问目录': 'Prompts in this chat',
+  '选择备用配置档案': 'Select backup profile',
+  '切换配置并重试': 'Switch profile & retry',
+  '直接重试': 'Retry now',
+  'Git 变更': 'Git changes',
+  '当前目录不是 Git 仓库。': 'This directory is not a Git repository.',
+  '工作区很干净，没有未提交的修改。': 'Working tree is clean; no uncommitted changes.',
+  '审查未提交改动': 'Review changes',
+  '生成提交信息': 'Generate commit message',
+  '点击变更文件可直接查看 Git Diff 对比。': 'Click a changed file to view its Git diff.',
+  '无法读取该文件。': 'Could not read this file.',
+  '点击下方文件名可预览恢复前后的代码差异：':
+    'Click a file name below to preview the diff before restoring:',
+  '手机扫码免密直连': 'Scan QR code to connect',
+  '远程访问二维码': 'Remote access QR code',
+  '使用手机相机扫描上方二维码，将自动携带':
+    'Scan the QR code above with your phone camera to connect with a',
+  '5 分钟有效的一次性配对码': '5-minute one-time pairing token',
+  '直接登录，无需在手机上手动输入长密码。':
+    'automatically, without typing your password on the phone.',
+  '刷新配对码': 'Refresh pairing code',
+  '复制免密链接': 'Copy pairing link',
+  '扫码配对码已过期或无效，请在电脑端刷新二维码。':
+    'The QR pairing code expired or is invalid. Refresh the QR code on the desktop.',
+  '本会话 Token 用量': 'Chat token usage',
+  '当前没有打开的会话；下方显示本机累计历史用量。':
+    'No active chat; cumulative local usage history is shown below.',
+  '本机累计用量看板（近 7 天）': 'Local usage analytics (last 7 days)',
+  '清空统计': 'Clear history',
+  '今日估算费用 / Token': 'Today estimated cost / tokens',
+  '近 7 天累计费用 / Token': 'Last 7 days cost / tokens',
+  '暂无历史统计。每完成一轮对话后会自动按天、按模型、按项目累加到本地。':
+    'No history yet. Completed turns are automatically tallied by day, model, and project.',
+  '模型排行（近 7 天）': 'Top models (last 7 days)',
+  '项目排行（近 7 天）': 'Top projects (last 7 days)',
+  '费用 · Token': 'Cost · Tokens',
+  '查看 GitHub 发布页': 'View GitHub releases'
+})
 
 const phraseEntries = Object.entries(DICTIONARY)
   .filter(([key]) => key.length > 1)
@@ -874,3 +1319,13 @@ export function initialLanguage(): Language {
   const saved = localStorage.getItem('3pi-language') || localStorage.getItem('claude-desk-language')
   return saved === 'zh' ? 'zh' : 'en'
 }
+
+/**
+ * Render-time translation helper. Use `t('中文文本')` in frequently updating
+ * components to translate directly during React render without waiting for a
+ * MutationObserver cycle.
+ */
+export function t(input: string): string {
+  return translateText(input)
+}
+

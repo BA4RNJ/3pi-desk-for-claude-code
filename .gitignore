@@ -3,6 +3,8 @@ out/
 release/
 release-wsl/
 dist/
+# Stray bundler output at the repository root (not referenced by the app).
+/index.js
 *.log
 *.tsbuildinfo
 .DS_Store

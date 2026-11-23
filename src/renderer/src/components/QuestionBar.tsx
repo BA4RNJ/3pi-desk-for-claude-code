@@ -17,13 +17,11 @@ interface QuestionItem {
 
 interface QuestionBarProps {
   request: PermissionRequestPayload
-  tabTitle?: string
   onRespond: (
     request: PermissionRequestPayload,
     decision: 'allow' | 'deny',
     answers?: Record<string, string | string[]>
   ) => void
-  onSwitchTab?: () => void
 }
 
 function readQuestions(request: PermissionRequestPayload): QuestionItem[] {
@@ -47,12 +45,7 @@ function readQuestions(request: PermissionRequestPayload): QuestionItem[] {
     }))
 }
 
-export function QuestionBar({
-  request,
-  tabTitle,
-  onRespond,
-  onSwitchTab
-}: QuestionBarProps) {
+export function QuestionBar({ request, onRespond }: QuestionBarProps) {
   const questions = readQuestions(request)
   const [selected, setSelected] = useState<Record<number, string[]>>({})
   const [custom, setCustom] = useState<Record<number, string>>({})
@@ -84,7 +77,11 @@ export function QuestionBar({
 
   return (
     <div className="permission-bar-wrap">
-      <div className="permission-bar question-bar">
+      <div
+        className="permission-bar question-bar is-attention"
+        role="alert"
+        aria-live="assertive"
+      >
         <div className="permission-bar-head">
           <span className="permission-bar-icon">
             <HelpCircle size={17} />
@@ -93,14 +90,12 @@ export function QuestionBar({
             <strong>{request.title || '需要你的选择'}</strong>
             <small>
               {request.description || '回答下面的问题后将继续。'}
-              {tabTitle && <> · <span data-i18n-skip>{tabTitle}</span></>}
             </small>
           </div>
-          {onSwitchTab && tabTitle && (
-            <button type="button" className="permission-switch" onClick={onSwitchTab}>
-              切换
-            </button>
-          )}
+          <span className="permission-attention-badge">
+            <span className="permission-attention-dot" />
+            等待回答
+          </span>
         </div>
 
         <div className="question-list question-bar-list">

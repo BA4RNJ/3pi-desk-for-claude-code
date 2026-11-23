@@ -14,15 +14,18 @@ import type {
   FileEntry,
   SlashCommandInfo
 } from '../../../shared/types'
-import type { ComposerDraft } from '../types'
 import { failureText } from '../../../shared/attachments'
 import { fileToAttachment } from '../lib/files'
 
 interface ComposerProps {
   running: boolean
+  pendingTurns?: number
   connecting: boolean
+  initialText: string
+  onTextChange: (value: string) => void
   attachments: Attachment[]
-  draft?: ComposerDraft | null
+  focusToken?: number
+  onFocusConsumed?: () => void
   onAttachmentsChange: (attachments: Attachment[]) => void
   attachmentError: AttachmentFailure[]
   onAttachmentErrorChange: (errors: AttachmentFailure[]) => void
@@ -30,6 +33,8 @@ interface ComposerProps {
   onStop: () => void
   onSearchFiles: (query: string) => Promise<FileEntry[]>
   commands: SlashCommandInfo[]
+  placeholder?: string
+  slashMenuPlacement?: 'above' | 'below'
 }
 
 interface MentionState {
@@ -40,39 +45,54 @@ interface MentionState {
 
 export function Composer({
   running,
+  pendingTurns = 0,
   connecting,
+  initialText,
+  onTextChange,
   attachments,
-  draft,
+  focusToken,
+  onFocusConsumed,
   onAttachmentsChange,
   attachmentError,
   onAttachmentErrorChange,
   onSend,
   onStop,
   onSearchFiles,
-  commands
+  commands,
+  placeholder = '输入消息…  输入 / 查看命令 · @ 引用文件',
+  slashMenuPlacement = 'above'
 }: ComposerProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(initialText)
   const [mention, setMention] = useState<MentionState | null>(null)
   const [results, setResults] = useState<FileEntry[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const slashMenuRef = useRef<HTMLDivElement>(null)
   const mentionTimer = useRef<number | null>(null)
 
+  const updateValue = (next: string): void => {
+    setValue(next)
+    onTextChange(next)
+  }
+
   useEffect(() => {
-    if (!draft) return
-    setValue(draft.text)
-    onAttachmentsChange(draft.attachments)
-    onAttachmentErrorChange([])
+    if (!focusToken) return
+    const next = initialText
+    setValue(next)
+    onTextChange(next)
     setMention(null)
     setSlashDismissed(false)
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
       if (!textarea) return
       textarea.focus()
-      textarea.setSelectionRange(draft.text.length, draft.text.length)
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
     })
-  }, [draft, onAttachmentsChange, onAttachmentErrorChange])
+    onFocusConsumed?.()
+    // The token is the trigger; initialText is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusToken])
 
   const slashQuery =
     !slashDismissed && value.startsWith('/') && !value.includes(' ')
@@ -89,8 +109,21 @@ export function Composer({
               command.description.toLowerCase().includes(slashQuery)
             )
           })
-          .slice(0, 8)
       : []
+
+  useLayoutEffect(() => {
+    const menu = slashMenuRef.current
+    if (!menu) return
+    const item = menu.querySelector<HTMLElement>(`[data-slash-index="${selectedIndex}"]`)
+    if (!item) return
+    const menuRect = menu.getBoundingClientRect()
+    const itemRect = item.getBoundingClientRect()
+    if (itemRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - itemRect.top
+    } else if (itemRect.bottom > menuRect.bottom) {
+      menu.scrollTop += itemRect.bottom - menuRect.bottom
+    }
+  }, [selectedIndex, slashQuery])
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -132,9 +165,9 @@ export function Composer({
 
   const submit = (): void => {
     const text = value.trim()
-    if ((!text && attachments.length === 0) || running) return
+    if (!text && attachments.length === 0) return
     onSend(text, attachments)
-    setValue('')
+    updateValue('')
     onAttachmentsChange([])
     onAttachmentErrorChange([])
     setMention(null)
@@ -150,7 +183,7 @@ export function Composer({
   }
 
   const selectCommand = (command: SlashCommandInfo): void => {
-    setValue(`/${command.name} `)
+    updateValue(`/${command.name} `)
     setSlashDismissed(true)
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -166,7 +199,7 @@ export function Composer({
     const before = value.slice(0, mention.start)
     const after = value.slice(mention.end)
     const next = `${before}@${file.relativePath} ${after}`
-    setValue(next)
+    updateValue(next)
     setMention(null)
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -305,11 +338,15 @@ export function Composer({
 
       <div className={`composer ${running ? 'is-running' : ''}`}>
         {slashResults.length > 0 && (
-          <div className="mention-menu slash-menu">
+          <div
+            ref={slashMenuRef}
+            className={`mention-menu slash-menu ${slashMenuPlacement === 'below' ? 'is-below' : ''}`}
+          >
             {slashResults.map((command, index) => (
               <button
-                key={command.name}
+                key={`${command.name}-${index}`}
                 type="button"
+                data-slash-index={index}
                 className={`mention-item slash-item ${index === selectedIndex ? 'is-selected' : ''}`}
                 onMouseDown={(event) => {
                   event.preventDefault()
@@ -346,11 +383,11 @@ export function Composer({
           ref={textareaRef}
           value={value}
           rows={1}
-          placeholder="输入消息…  输入 / 查看命令 · @ 引用文件"
+          placeholder={placeholder}
           spellCheck={false}
           onChange={(event) => {
             const next = event.target.value
-            setValue(next)
+            updateValue(next)
             setSlashDismissed(false)
             setSelectedIndex(0)
             updateMention(next, event.target.selectionStart)
@@ -373,31 +410,38 @@ export function Composer({
               <Paperclip size={15} />
             </button>
             <span className="composer-hint">
-              {connecting ? '正在连接…' : 'Enter 发送 · Shift+Enter 换行'}
+              {connecting
+                ? '正在连接…'
+                : running
+                  ? pendingTurns > 1
+                    ? `运行中 · ${pendingTurns - 1} 条排队`
+                    : '运行中 · 发送将排队'
+                  : 'Enter 发送 · Shift+Enter 换行'}
             </span>
           </div>
-          {running ? (
-            <button
-              type="button"
-              className="send-button stop-button"
-              onClick={onStop}
-              aria-label="停止生成"
-              title="停止生成"
-            >
-              <Square size={14} fill="currentColor" />
-            </button>
-          ) : (
+          <div className="composer-actions">
+            {running && (
+              <button
+                type="button"
+                className="send-button stop-button"
+                onClick={onStop}
+                aria-label="停止生成"
+                title="停止生成"
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            )}
             <button
               type="button"
               className="send-button"
               disabled={!value.trim() && attachments.length === 0}
               onClick={submit}
-              aria-label="发送消息"
-              title="发送"
+              aria-label={running ? '排队发送' : '发送消息'}
+              title={running ? '排队发送' : '发送'}
             >
               <ArrowUp size={17} />
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

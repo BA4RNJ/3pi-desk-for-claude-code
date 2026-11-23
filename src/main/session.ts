@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
 import {
   query,
   type Options,
@@ -24,7 +25,9 @@ import type {
   TurnStats
 } from '../shared/types'
 import { SUPPORTED_IMAGE_MEDIA_TYPES, isSvgFile } from '../shared/attachments'
+import { isWebSearchConfigured, type WebSearchRuntimeConfig } from '../shared/web-search'
 import { ensureClaudeExecutable, resolveClaudeExecutable } from './claude-cli'
+import { createWebSearchMcpServer } from './web-search-mcp'
 
 export { resolveClaudeExecutable }
 
@@ -42,6 +45,10 @@ export interface StartOptions extends SessionStartOptions {
   allowedTools?: string[]
   disallowedTools?: string[]
   contextWindow?: number
+  /** API provider id, used to decide whether native WebSearch is usable. */
+  apiProviderId?: string
+  /** App-level search that works with third-party providers. */
+  webSearch?: WebSearchRuntimeConfig
 }
 
 type PendingPermission = {
@@ -91,6 +98,14 @@ function errorMessage(error: unknown): string {
   return String(error)
 }
 
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 
 
 export interface SessionCallbacks {
@@ -114,6 +129,10 @@ export class SessionManager {
    */
   private pendingTurns = 0
   private pending = new Map<string, PendingPermission>()
+  private startAt = 0
+  private lastSendAt = 0
+  private firstStreamLogged = false
+  private firstTokenLogged = false
   private lastExtras: Pick<
     StartOptions,
     | 'extraArgs'
@@ -122,6 +141,8 @@ export class SessionManager {
     | 'additionalDirectories'
     | 'allowedTools'
     | 'disallowedTools'
+    | 'apiProviderId'
+    | 'webSearch'
   > = {}
 
   private state: SessionState = {
@@ -130,7 +151,8 @@ export class SessionManager {
     cwd: '',
     model: 'deepseek-v4.1-flash',
     permissionMode: 'default',
-    effort: 'default'
+    effort: 'default',
+    pendingTurns: 0
   }
 
   constructor(private readonly callbacks: SessionCallbacks) {}
@@ -145,6 +167,25 @@ export class SessionManager {
   }
 
   async start(options: StartOptions): Promise<SessionState> {
+    this.startAt = Date.now()
+    // Claude Code runs with the workspace as its process cwd and keys
+    // transcripts by that absolute path. A renamed/moved folder therefore
+    // cannot start or resume until the user relocates it; fail with an
+    // actionable message instead of an opaque spawn ENOENT.
+    if (!options.cwd || !isDirectory(options.cwd)) {
+      const message = options.cwd
+        ? `项目文件夹不存在：${options.cwd}。它可能已被重命名或移动，请在项目页重新定位文件夹。`
+        : '项目文件夹为空，无法启动会话。'
+      this.state = {
+        ...this.state,
+        cwd: options.cwd || '',
+        connecting: false,
+        error: message
+      }
+      this.emitState()
+      throw new Error(message)
+    }
+
     await this.stop()
 
     const generation = ++this.generation
@@ -154,7 +195,9 @@ export class SessionManager {
       contextWindow: options.contextWindow,
       additionalDirectories: options.additionalDirectories,
       allowedTools: options.allowedTools,
-      disallowedTools: options.disallowedTools
+      disallowedTools: options.disallowedTools,
+      apiProviderId: options.apiProviderId,
+      webSearch: options.webSearch
     }
     this.pendingTurns = 0
     this.state = {
@@ -166,7 +209,8 @@ export class SessionManager {
       effort: options.effort || this.state.effort || 'default',
       sessionId: options.resume,
       stats: undefined,
-      context: undefined
+      context: undefined,
+      pendingTurns: 0
     }
     this.emitState()
 
@@ -189,6 +233,25 @@ export class SessionManager {
     this.queue = queue
     this.abort = abort
 
+    const webSearchEnabled = Boolean(
+      options.webSearch && isWebSearchConfigured(options.webSearch)
+    )
+    const disallowedTools = [...(options.disallowedTools ?? [])]
+    if (
+      webSearchEnabled &&
+      options.apiProviderId !== 'anthropic' &&
+      !disallowedTools.includes('WebSearch')
+    ) {
+      // Native WebSearch executes at the inference provider. Third-party
+      // Anthropic-compatible endpoints generally do not implement it, so use
+      // the in-process MCP search tool instead.
+      disallowedTools.push('WebSearch')
+    }
+    const mcpServers =
+      webSearchEnabled && options.webSearch
+        ? { '3pi-web-search': createWebSearchMcpServer(options.webSearch) }
+        : undefined
+
     const queryOptions: Options = {
       cwd: options.cwd,
       pathToClaudeCodeExecutable: claudeExecutable,
@@ -201,12 +264,13 @@ export class SessionManager {
       maxBudgetUsd: options.maxBudgetUsd,
       additionalDirectories: options.additionalDirectories,
       allowedTools: options.allowedTools,
-      disallowedTools: options.disallowedTools,
+      disallowedTools: disallowedTools.length > 0 ? disallowedTools : undefined,
       extraArgs: options.extraArgs,
       resume: options.resume,
       includePartialMessages: true,
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       tools: { type: 'preset', preset: 'claude_code' },
+      mcpServers,
       settingSources: ['user', 'project', 'local'],
       abortController: abort,
       env: {
@@ -295,8 +359,12 @@ export class SessionManager {
       }
     }
 
+    this.lastSendAt = Date.now()
+    this.firstStreamLogged = false
+    this.firstTokenLogged = false
     this.pendingTurns += 1
     this.state.running = true
+    this.state.pendingTurns = this.pendingTurns
     this.state.error = undefined
     this.emitState()
 
@@ -404,22 +472,40 @@ export class SessionManager {
   async mcpStatus(): Promise<McpServerEntry[]> {
     if (!this.query) return []
     const servers = await this.query.mcpServerStatus()
-    return servers.map((server) => ({
-      name: server.name,
-      scope:
-        server.scope === 'user' || server.scope === 'project' || server.scope === 'local'
-          ? server.scope
-          : 'other',
-      config: (server.config ?? {}) as Record<string, unknown>,
-      status: server.status,
-      source: server.source,
-      tools: server.tools?.map((tool) => tool.name)
-    }))
+    return servers.map((server) => {
+      const toolDetails = (server.tools ?? []).map((tool) => ({
+        name: tool.name,
+        description: tool.description
+      }))
+      return {
+        name: server.name,
+        scope:
+          server.scope === 'user' || server.scope === 'project' || server.scope === 'local'
+            ? server.scope
+            : 'other',
+        config: (server.config ?? {}) as Record<string, unknown>,
+        status: server.status,
+        source: server.source,
+        tools: toolDetails.map((tool) => tool.name),
+        toolDetails,
+        error: server.error
+      }
+    })
   }
 
   async toggleMcp(name: string, enabled: boolean): Promise<void> {
     if (!this.query) throw new Error('Chat has not started.')
     await this.query.toggleMcpServer(name, enabled)
+  }
+
+  async reconnectMcp(name: string): Promise<void> {
+    if (!this.query) throw new Error('Chat has not started.')
+    await this.query.reconnectMcpServer(name)
+  }
+
+  async stopTask(taskId: string): Promise<void> {
+    if (!this.query) throw new Error('Chat has not started.')
+    await this.query.stopTask(taskId)
   }
 
   async supportedCommands(): Promise<SlashCommandInfo[]> {
@@ -502,6 +588,7 @@ export class SessionManager {
     this.pendingTurns = 0
     this.state.running = false
     this.state.connecting = false
+    this.state.pendingTurns = 0
     this.emitState()
   }
 
@@ -516,6 +603,7 @@ export class SessionManager {
       this.pendingTurns = 0
       this.state.connecting = false
       this.state.running = false
+      this.state.pendingTurns = 0
       this.state.error = errorMessage(error)
       this.emitState()
     } finally {
@@ -523,17 +611,43 @@ export class SessionManager {
         this.pendingTurns = 0
         this.state.connecting = false
         this.state.running = false
+        this.state.pendingTurns = 0
         this.emitState()
       }
     }
   }
 
   private handleMessage(message: SDKMessage): void {
+    if (message.type === 'stream_event') {
+      if (
+        message.event.type === 'message_start' &&
+        !this.firstStreamLogged &&
+        this.lastSendAt > 0
+      ) {
+        this.firstStreamLogged = true
+        const elapsed = Date.now() - this.lastSendAt
+        if (elapsed > 1500) console.error(`[timing] stream-start ${elapsed}ms`)
+      }
+      if (
+        message.event.type === 'content_block_delta' &&
+        !this.firstTokenLogged &&
+        this.lastSendAt > 0
+      ) {
+        this.firstTokenLogged = true
+        const elapsed = Date.now() - this.lastSendAt
+        if (elapsed > 1500) console.error(`[timing] first-token ${elapsed}ms`)
+      }
+    }
+
     if ('session_id' in message && message.session_id) {
       this.state.sessionId = message.session_id
     }
 
     if (message.type === 'system' && message.subtype === 'init') {
+      if (this.startAt > 0) {
+        const elapsed = Date.now() - this.startAt
+        if (elapsed > 1500) console.error(`[timing] sdk-init ${elapsed}ms`)
+      }
       this.state.connecting = false
       this.state.cwd = message.cwd
       this.state.permissionMode = message.permissionMode
@@ -547,6 +661,7 @@ export class SessionManager {
       // pending, keep `running` true so the stop button does not disappear.
       this.pendingTurns = Math.max(0, this.pendingTurns - 1)
       this.state.running = this.pendingTurns > 0
+      this.state.pendingTurns = this.pendingTurns
       this.state.connecting = false
       const usage = message.subtype === 'success' ? message.usage : undefined
       const stats: TurnStats = {

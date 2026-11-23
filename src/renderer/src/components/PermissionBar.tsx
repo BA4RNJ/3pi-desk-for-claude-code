@@ -1,20 +1,20 @@
 import { ChevronDown, ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
 import type { PermissionRequestPayload } from '../../../shared/types'
+import { permissionDiff } from '../../../shared/permission-diff'
 import { formatJson, truncate } from '../lib/format'
+import { DiffView } from './DiffView'
 import { Markdown } from './Markdown'
 
 interface PermissionBarProps {
   request: PermissionRequestPayload
   queued: number
-  tabTitle?: string
   planPreview?: string
   onRespond: (
     request: PermissionRequestPayload,
     decision: 'allow' | 'deny',
     always?: boolean
   ) => void
-  onSwitchTab?: () => void
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -35,6 +35,7 @@ const TOOL_LABELS: Record<string, string> = {
 
 function toolLabel(name: string): string {
   if (TOOL_LABELS[name]) return TOOL_LABELS[name]
+  if (name === 'mcp__3pi-web-search__web_search') return '联网搜索'
   if (name.startsWith('mcp__')) return `调用 ${name.replace(/^mcp__/, '')}`
   return `使用 ${name}`
 }
@@ -58,14 +59,13 @@ function summary(request: PermissionRequestPayload): string {
 export function PermissionBar({
   request,
   queued,
-  tabTitle,
   planPreview,
-  onRespond,
-  onSwitchTab
+  onRespond
 }: PermissionBarProps) {
   const [expanded, setExpanded] = useState(false)
   const detail = summary(request) || formatJson(request.input)
   const isPlan = request.kind === 'plan'
+  const diffs = isPlan ? [] : permissionDiff(request.toolName, request.input)
 
   return (
     <div className="permission-bar-wrap">
@@ -80,15 +80,9 @@ export function PermissionBar({
             </strong>
             <small>
               {request.description || request.title || (isPlan ? '已完成规划，批准后将开始执行。' : '执行前需要你的许可。')}
-              {tabTitle && <> · <span data-i18n-skip>{tabTitle}</span></>}
               {queued > 0 ? ` · 还有 ${queued} 个请求` : ''}
             </small>
           </div>
-          {onSwitchTab && tabTitle && (
-            <button type="button" className="permission-switch" onClick={onSwitchTab}>
-              切换
-            </button>
-          )}
         </div>
 
         {isPlan && planPreview ? (
@@ -112,6 +106,21 @@ export function PermissionBar({
                 {expanded ? '收起' : '详情'}
               </button>
             )}
+          </div>
+        )}
+
+        {diffs.length > 0 && (
+          <div className="permission-bar-diff">
+            <div className="permission-bar-diff-head">
+              改动预览
+              <small>允许后将按上方内容写入</small>
+            </div>
+            {diffs.map((diff, index) => (
+              <div className="permission-bar-diff-block" key={`${diff.label}-${index}`}>
+                <small className="permission-bar-diff-label">{diff.label}</small>
+                <DiffView before={diff.before} after={diff.after} compact />
+              </div>
+            ))}
           </div>
         )}
 

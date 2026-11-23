@@ -1,7 +1,9 @@
 import {
   Bot,
   BookOpen,
+  ChevronDown,
   Download,
+  LogIn,
   Plug,
   Plus,
   Puzzle,
@@ -109,6 +111,9 @@ export function ExtensionsPanel({ cwd, home, tabId, onOpenPath }: ExtensionsPane
   const [marketQuery, setMarketQuery] = useState('')
   const [newMarketplace, setNewMarketplace] = useState('')
   const [busyMarket, setBusyMarket] = useState('')
+  const [expandedMcp, setExpandedMcp] = useState<string | null>(null)
+  const [busyMcp, setBusyMcp] = useState('')
+  const [mcpLoginOutput, setMcpLoginOutput] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -192,11 +197,59 @@ export function ExtensionsPanel({ cwd, home, tabId, onOpenPath }: ExtensionsPane
 
   const toggleMcp = async (server: McpServerEntry): Promise<void> => {
     if (!tabId) return
+    setBusyMcp(server.name)
     try {
       await window.desk.toggleMcp(tabId, server.name, server.status === 'disabled')
       await load()
     } catch (toggleError) {
       setError(errorText(toggleError))
+    } finally {
+      setBusyMcp('')
+    }
+  }
+
+  const reconnectMcp = async (server: McpServerEntry): Promise<void> => {
+    if (!tabId) return
+    setBusyMcp(server.name)
+    setError('')
+    setMessage('')
+    try {
+      await window.desk.reconnectMcp(tabId, server.name)
+      setMessage(`已重新连接 ${server.name}`)
+      await load()
+    } catch (reconnectError) {
+      setError(errorText(reconnectError))
+    } finally {
+      setBusyMcp('')
+    }
+  }
+
+  const loginMcp = async (server: McpServerEntry): Promise<void> => {
+    if (!tabId) return
+    setBusyMcp(server.name)
+    setError('')
+    setMessage('')
+    setMcpLoginOutput('')
+    try {
+      const result = await window.desk.loginMcp(tabId, server.name)
+      setMcpLoginOutput(result.output || (result.ok ? '登录完成' : '登录未完成'))
+      if (result.url) setMessage('如果浏览器没有自动打开，请复制上方链接手动访问。')
+      await load()
+    } catch (loginError) {
+      setError(errorText(loginError))
+    } finally {
+      setBusyMcp('')
+    }
+  }
+
+  const cancelMcpLogin = async (): Promise<void> => {
+    try {
+      await window.desk.cancelMcpLogin()
+      setMcpLoginOutput('已取消登录')
+    } catch (cancelError) {
+      setError(errorText(cancelError))
+    } finally {
+      setBusyMcp('')
     }
   }
 
@@ -418,28 +471,99 @@ export function ExtensionsPanel({ cwd, home, tabId, onOpenPath }: ExtensionsPane
             {(snapshot?.mcp || []).length === 0 && (
               <p className="settings-empty">还没有配置 MCP 服务器。</p>
             )}
-            {(snapshot?.mcp || []).map((server) => (
-              <div key={`${server.scope}-${server.name}`} className="extension-row">
-                <span className={`extension-icon status-${server.status || 'disabled'}`}>
-                  <Plug size={14} />
-                </span>
-                <div className="extension-copy">
-                  <strong>{server.name}</strong>
-                  <small>
-                    {server.scope} · {MCP_STATUS_TEXT[server.status || ''] || server.status || '未连接'}
-                    {server.tools?.length ? ` · ${server.tools.length} 个工具` : ''}
-                  </small>
+            {(snapshot?.mcp || []).map((server) => {
+              const key = `${server.scope}-${server.name}`
+              const isOpen = expandedMcp === key
+              const busy = busyMcp === server.name
+              return (
+                <div key={key} className="mcp-entry">
+                  <div className={`extension-row ${isOpen ? 'is-open' : ''}`}>
+                    <span className={`extension-icon status-${server.status || 'disabled'}`}>
+                      <Plug size={14} />
+                    </span>
+                    <button
+                      type="button"
+                      className="extension-copy mcp-toggle"
+                      onClick={() => setExpandedMcp(isOpen ? null : key)}
+                      aria-expanded={isOpen}
+                    >
+                      <strong>
+                        {server.name === '3pi-web-search' ? '联网搜索（内置）' : server.name}
+                        <ChevronDown size={12} className={isOpen ? 'is-open' : ''} />
+                      </strong>
+                      <small>
+                        {server.scope} · {MCP_STATUS_TEXT[server.status || ''] || server.status || '未连接'}
+                        {server.tools?.length ? ` · ${server.tools.length} 个工具` : ''}
+                      </small>
+                    </button>
+                    <div className="mcp-row-actions">
+                      {busy && (
+                        <button
+                          type="button"
+                          className="mini-button"
+                          onClick={() => void cancelMcpLogin()}
+                        >
+                          取消登录
+                        </button>
+                      )}
+                      {server.status === 'needs-auth' && (
+                        <button
+                          type="button"
+                          className="mini-button"
+                          disabled={!tabId || busy}
+                          onClick={() => void loginMcp(server)}
+                          title="运行 claude mcp login"
+                        >
+                          <LogIn size={12} /> {busy ? '登录中…' : '登录'}
+                        </button>
+                      )}
+                      {tabId && server.status !== 'disabled' && (
+                        <button
+                          type="button"
+                          className="mini-button"
+                          disabled={busy}
+                          onClick={() => void reconnectMcp(server)}
+                          title="重新连接此 MCP 服务器"
+                        >
+                          <RefreshCw size={12} className={busy ? 'spin-icon' : ''} /> 重连
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="mini-button"
+                        disabled={!tabId || !server.status || busy}
+                        onClick={() => void toggleMcp(server)}
+                      >
+                        {server.status === 'disabled' ? '启用' : '停用'}
+                      </button>
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div className="mcp-details">
+                      <div className="mcp-details-meta">
+                        <span>来源：{server.source || server.scope}</span>
+                        {server.error && <span className="mcp-error">{server.error}</span>}
+                      </div>
+                      {server.toolDetails && server.toolDetails.length > 0 ? (
+                        <ul className="mcp-tool-list">
+                          {server.toolDetails.map((tool) => (
+                            <li key={tool.name}>
+                              <code>{tool.name}</code>
+                              {tool.description && <span>{tool.description}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="settings-empty">没有可用的工具信息。</p>
+                      )}
+                      {mcpLoginOutput && (
+                        <pre className="mcp-login-output">{mcpLoginOutput}</pre>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="mini-button"
-                  disabled={!tabId || !server.status}
-                  onClick={() => void toggleMcp(server)}
-                >
-                  {server.status === 'disabled' ? '启用' : '停用'}
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           <div className="extension-editor">

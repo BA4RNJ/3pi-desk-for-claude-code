@@ -59,6 +59,13 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
       settings.ts               ~/.claude/settings.json + app preferences
       models.ts                 OpenCode Go model catalog + API test
       files.ts                  file tree/read/write, attachments, screenshots
+      content-search.ts         bounded full-text workspace search
+      session-copy.ts           cross-workspace transcript copy/migration
+      backups.ts                session backup listing/reading/export
+      diagnostics.ts            local diagnostic log and export bundle
+      mcp-auth.ts               cancellable `claude mcp login` runner
+      web-search-client.ts      DuckDuckGo/Bing/Baidu/SearXNG/Tavily/Brave search client
+      web-search-mcp.ts         in-process SDK MCP server for `web_search`
       extensions.ts             MCP/plugins/skills/hooks/agents, marketplace
       background.ts             `claude --bg` background sessions
       version.ts                app/SDK/CLI/npm version info
@@ -73,6 +80,7 @@ and fixed. Read this before changing code. `AGENTS.md` contains the short checkl
         types.ts                UI message/tab types
         lib/messages.ts         SDK event -> UI message reducer
         lib/usage.ts            token/cost estimates
+        lib/token-rate.ts       live output tok/s estimate from stream deltas
         lib/export.ts           Markdown export
         lib/files.ts            browser File -> attachment conversion
         lib/format.ts           time/cost/token formatting
@@ -96,8 +104,14 @@ Key components:
 - `TopBar.tsx` — title, file panel, usage, tasks, working state.
 - `ComposerControls.tsx` — model, effort, permission mode, and chat view toggles below the composer.
 - `Dropdown.tsx` — shared dropdown used by TopBar and ComposerControls.
+- `HomeView.tsx` — project directory home with project search and recent activity.
+- `ProjectView.tsx` — per-project chat list with search, new chat, and copy/move actions.
+- `CopySessionDialog.tsx` — copy or move a chat to another project.
 - `ChatView.tsx` / `MessageView.tsx` / `ToolCard.tsx` — transcript rendering, compact/user-only views.
-- `FilePanel.tsx` / `FilePreviewDialog.tsx` — workspace file tree and editor.
+- `DiffView.tsx` — shared diff renderer for tool cards and permission previews.
+- `WorkspaceSearchDialog.tsx` — file-name/content search with line jump.
+- `CommandPalette.tsx` — Ctrl/Cmd+K command palette.
+- `FilePanel.tsx` / `FilePreviewDialog.tsx` — workspace file tree and editor (line jump support).
 - `SettingsDialog.tsx` — General/API/Permissions/Extensions/Background/Usage/About.
 - `ExtensionsPanel.tsx` — MCP, plugins + marketplace, skills, hooks, agents.
 - `BackgroundPanel.tsx` — local background sessions.
@@ -135,15 +149,19 @@ ANTHROPIC_BASE_URL (default OpenCode Go)
 
 - Session: `session:start`, `session:send`, `session:interrupt`, `session:stop`,
   `session:setModel`, `session:setPermissionMode`, `session:setEffort`, `session:commands`,
-  `session:rewind`, `session:contextUsage`, `session:mcpStatus`, `session:toggleMcp`.
+  `session:rewind`, `session:contextUsage`, `session:mcpStatus`, `session:toggleMcp`,
+  `session:reconnectMcp`, `session:loginMcp`, `session:cancelMcpLogin`, `session:stopTask`.
 - Permissions: `permission:respond`.
-- Sessions: `sessions:list`, `sessions:all`, `sessions:messages`, `sessions:rename`,
-  `sessions:delete`, `sessions:tag`, `sessions:fork`.
-- Files: `files:pick`, `files:search`, `files:tree`, `files:read`,
-  `files:write`, `files:export`, `open:path`, `open:backupDir`.
+- Sessions: `sessions:list` (`offset`/`limit`), `sessions:all` (`limit`/`offset`),
+  `sessions:messages`, `sessions:rename`, `sessions:delete`, `sessions:tag`, `sessions:fork`,
+  `sessions:copy` (`copy`/`move` to another workspace).
+- Files: `files:pick`, `files:search`, `files:searchContent`, `files:tree`, `files:read`,
+  `files:write`, `files:export`, `backups:list|read|export`, `diagnostics:export`,
+  `open:path`, `open:backupDir`.
 - Settings/models: `settings:get`, `settings:saveApi`, `settings:saveApiProfile`,
   `settings:deleteApiProfile`, `settings:applyApiProfile`, `settings:savePreferences`,
   `settings:savePermissionRules`, `settings:saveCustomModel`, `settings:deleteCustomModel`,
+  `settings:webSearch`, `settings:saveWebSearch`, `settings:testWebSearch`,
   `models:list`, `models:test`. `models:test` returns the discovered model list and whether the
   check used the provider list or a Messages probe.
 - Extensions: `extensions:list`, `extensions:mcpStatus`, `extensions:readMcp`,
@@ -153,7 +171,8 @@ ANTHROPIC_BASE_URL (default OpenCode Go)
   `extensions:readHooks|saveHooks`.
 - Background: `background:list`, `background:start`, `background:logs`, `background:stop`,
   `background:remove`, `background:trust`.
-- App: `app:versionInfo`, `defaults:get`, `cwd:save`, `dialog:pickDirectory`.
+- App: `app:versionInfo`, `defaults:get`, `cwd:save`, `dialog:pickDirectory`,
+  `workspace:exists`, `workspace:relocate`.
 - Main -> renderer: `session:event`, `session:state`, `permission:request`,
   `permission:cancel` (all carry `{tabId,...}`), `app:new-tab`.
 
@@ -218,6 +237,30 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   `rewindId`. Assistant/result frames may also carry `user_message_uuid`, which is bound as a
   fallback.
 
+### Queued turns and per-task control
+
+`SessionManager.send()` pushes into the SDK's streaming-input queue and increments `pendingTurns`;
+the renderer may send while `state.running` is true. `SessionState.pendingTurns` is pushed to the UI
+so the composer can show "N queued". A `result` decrements one turn and only clears `running` when
+the last pending turn finishes. The stop button calls `Query.interrupt()`; it interrupts the
+current turn, but already queued user messages remain in the queue. Use `Query.stopTask(taskId)` for
+background/subagent tasks; the task id comes from `task_started`/`task_notification` events.
+
+### Built-in web search (MCP)
+
+Third-party Anthropic-compatible providers usually do not implement Anthropic's server-side
+`web_search` tool. The app therefore registers an in-process SDK MCP server named `3pi-web-search`
+with a `web_search` tool (`web-search-mcp.ts`). It calls `web-search-client.ts`, which supports
+DuckDuckGo, Bing, and Baidu mobile HTML (no key), SearXNG JSON, Tavily, and Brave. Settings are stored in app settings
+(`webSearch`), with the API key masked in `SettingsSnapshot`; `getWebSearchConfig()` returns the raw
+runtime config to the main process only.
+
+When web search is enabled and the API provider is not `anthropic`, `session.ts` adds `WebSearch`
+to `disallowedTools` and registers the MCP server. With the official Anthropic API the native tool
+is left available. The MCP tool is read-only but still goes through `canUseTool`; the permission
+card labels it `联网搜索`. Do not put Electron-only APIs in the search client/server modules; the
+native bridge bundles them.
+
 ## 7. Renderer state: tabs, messages, sessions
 
 `useDesk.ts` is a large hook but intentionally centralized.
@@ -240,6 +283,34 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   `persistChatSettings()` (serialized through `chatSettingsQueue` so rapid changes cannot lose
   updates). `selectSession` restores the saved values before `startSession`; new tabs inherit
   `lastChatSettings`. Do not add a composer setting without persisting it here.
+- **Navigation** is `home` → `project` → `chat` in `App.tsx`. The boot path no longer creates an
+  empty tab; `HomeView` shows recent projects, `ProjectView` has a composer at the top and the
+  project's chat history below, and `TabBar` remains available for open chats. `closeTab` leaves
+  no active tab when the last chat closes, returning to the project/home view. `HomeView` and the
+  main sidebar both expose an explicit home action.
+- **Palettes are neutral surfaces with an accent.** `blue`/`green`/`mono` use white (or dark
+  neutral) backgrounds; the selected accent colours the controls. Do not tint the whole page
+  background for those palettes. The settings window is intentionally opaque and has a fixed
+  top bar with close/save so those actions never scroll away.
+- **Composer drafts are per tab.** `App.tsx` keeps `composers: Record<tabId, ComposerState>`
+  (text, attachments, attachment errors, focus token). `Composer` is controlled and keyed by tab
+  id. Never move draft text back into Composer-local state, or tabs will share unsent text again.
+- **Appearance.** `AppPreferences.palette` (`claude`/`mono`/`blue`/`green`) becomes
+  `data-palette` on `<html>`; CSS blocks override neutral surface variables. `claude` is warm
+  khaki; `mono`/`blue`/`green` keep neutral white (or dark) surfaces and only tint controls via
+  the accent. `accent` is either a preset id (`coral`/`blue`/`green`/`purple`, handled by
+  `data-accent` CSS) or a `#rrggbb` value, in which case `useDesk` sets `data-accent="custom"` and
+  inline `--coral*` variables with `color-mix`. The settings shell is opaque
+  (`background: var(--bg)`), and its fixed top bar owns close/save.
+- **AI work timer.** `TabView` carries `workElapsedMs` and `workStartedAt`; `applyState` starts and
+  stops it on `running` transitions, and `TopBar` adds `now - workStartedAt` while running. The
+  timer is renderer state and resets when the app restarts.
+- **Live token rate.** `lib/token-rate.ts` estimates output `tok/s` from `stream_event` content
+  deltas (characters, with a rolling 3.5 s window). The estimate is calibrated against
+  `message_delta.usage.output_tokens`, with the turn total as a fallback. `useDesk` feeds every
+  stream event into the tab's `rateMeter`, `toView` publishes the latest snapshot, and `TopBar`
+  renders it in the same chip as tokens/context. A new send or a rewind resets the meter; the
+  snapshot is runtime-only and never persisted.
 - **In-place edit/withdraw** (`retractMessage` in `useDesk.ts`) forks the session up to the
   previous transcript entry, reloads the forked history to refresh transcript ids, stops the old
   manager, swaps the tab's `sessionId`, and truncates the UI. The old session id is added to
@@ -247,7 +318,24 @@ console.log("missing:",[...invoke].filter(x=>!handle.has(x)));
   never deleted. Edit returns the text/attachments through `ComposerDraft`; withdraw only shows a
   confirmation. File changes are not rolled back by this flow.
 
-### API providers, models, and detection
+### API providers, subscriptions, and detection
+
+- `ApiProfile` records store provider, base URL, model, token, and auth mode. The active profile id
+  lives in app settings as `activeProfileId` and is exposed as `ApiSettings.profileId`.
+  `applyApiProfile()` writes the profile into `~/.claude/settings.json`, marks it active, and
+  (for a chat) stops and resumes the current session so the new credentials take effect without
+  losing the transcript. Manual API edits clear the active profile.
+- The model picker is two independently scrollable boxes: **API configuration / subscriptions**
+  on top and **Model** below. The project page composer exposes the same picker; there the profile
+  is applied for the next project chat without restarting an unrelated open tab
+  (`applyApiProfile(id, false)`).
+- Settings → API defaults to a **list** (current configuration card + saved configurations). The
+  provider/Base URL/token/model/custom-model form only opens after **Add configuration** or
+  **Edit**; the form's single **Save configuration** creates/updates the profile, applies it with
+  `restartActive: false`, and returns to the list. Saving without a name generates one; a new
+  non-local profile requires a token, while an edited profile keeps its token if the field is
+  blank.
+
 
 - `src/shared/providers.ts` holds the provider presets shown in Settings → API: OpenCode Go,
   Anthropic, Z.ai (GLM), Moonshot (Kimi), DeepSeek, MiniMax, Ollama (local), and Custom / Other.
@@ -345,6 +433,13 @@ Claude Code owns transcripts. The app must treat them as irreplaceable user data
 - Chat lists are per active tab/workspace. There is no global "all chats" tree inside the sidebar;
   use the search field to find chats across workspaces.
 - Removing a workspace from recents does not delete its Claude Code transcripts.
+- Claude Code keys transcripts by the absolute cwd, so renaming or moving a project folder
+  invalidates both the recent-workspace path and every transcript's `cwd`. `ProjectView` detects
+  the missing path, offers 重新定位文件夹, and calls `workspace:relocate`, which copies the old
+  project's transcripts into the new encoded project directory with `cwd` rewritten
+  (`relocateProjectTranscripts` in `session-copy.ts`). Originals are never moved or deleted.
+  `SessionManager.start()` also refuses to spawn the CLI in a missing cwd and returns an
+  actionable error instead of `spawn ENOENT`.
 
 ## 11. Files and attachments
 
@@ -373,7 +468,11 @@ Claude Code owns transcripts. The app must treat them as irreplaceable user data
 
 - MCP: reads `~/.claude.json` (`mcpServers`, `projects[cwd].mcpServers`) and `<cwd>/.mcp.json`.
   The editor edits only the inner server object. Saving merges back. Active session status is
-  obtained from `query.mcpServerStatus()`; toggling uses `query.toggleMcpServer()`.
+  obtained from `query.mcpServerStatus()`, including tool descriptions and error text; toggling
+  uses `query.toggleMcpServer()` and reconnecting uses `query.reconnectMcpServer()`. The
+  Extensions panel can expand a server to inspect its tools. `needs-auth` servers expose a login
+  button that runs `claude mcp login <name>` through the cancellable `mcp-auth.ts` runner (stdin
+  closed, output captured, browser URL opened when one is printed).
 - Plugins: `claude plugin list --json` for installed; `claude plugin list --available --json` for
   the catalog. Do **not** use `execFile` with an open stdin for install/update/uninstall: the CLI
   can wait on a confirmation and hang forever. `extensions.ts` uses `runPluginCommand` (spawn,
@@ -550,14 +649,25 @@ node scripts/smoke-packaged.mjs   # auto-detects the Linux/macOS packaged binary
   unaffected.
 - The default package is ~275 MB unpacked; it resolves the Claude Code CLI at runtime. The
   offline build (`electron-builder.offline.yml`) bundles the CLI and is ~640 MB.
+- Web search uses DuckDuckGo HTML by default; it can be rate limited or blocked. Bing and Baidu
+  are no-key alternatives, while SearXNG/Tavily/Brave are the stable quota options. The in-process
+  MCP server is only available while a session is running.
+- `Query.interrupt()` stops the current turn but leaves queued user messages in the SDK queue.
+  Closing the tab is the way to discard them; per-task stop targets background/subagent tasks.
+- MCP sign-in is a best-effort wrapper around `claude mcp login`; it depends on a browser callback
+  and may time out in headless environments.
+- Edit/withdraw is visually in-place but still creates a hidden SDK fork; a true same-session
+  truncation would need a backup-then-rewrite path and is not implemented.
+- Cross-workspace copy rewrites `cwd` fields and relies on Claude Code's project-directory encoding
+  (`encodeProjectDir`). Re-test it when the CLI changes transcript layout.
 - Future work: cloud/API usage limits, proper i18n, auto-update feed, richer diff editor, more
-  marketplace metadata, and an automated restore UI for backups.
+  marketplace metadata, an automated restore UI for backups, and semantic workspace indexing.
 
 ## 18. Change checklist
 
 Before committing/changing:
 
-1. Run `npm run typecheck` and `npx electron-vite build`.
+1. Run `npm run typecheck`, `npm test`, and `npx electron-vite build`.
 2. If touching IPC, run the missing-handler check and update preload/shared types.
 3. If touching SDK spawn/packaging, check `pathToClaudeCodeExecutable`, `asarUnpack`, and test the
    **packaged** app (not just dev).

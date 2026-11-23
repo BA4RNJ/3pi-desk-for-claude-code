@@ -47,13 +47,41 @@ async function latestSdkVersion(): Promise<string | undefined> {
   }
 }
 
+async function latestAppRelease(): Promise<{ version?: string; url?: string }> {
+  try {
+    const response = await fetch(
+      'https://api.github.com/repos/BA4RNJ/3pi-desk-for-claude-code/releases/latest',
+      {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(12_000)
+      }
+    )
+    if (!response.ok) return {}
+    const body = (await response.json()) as { tag_name?: string; html_url?: string }
+    const version = body.tag_name ? body.tag_name.replace(/^v/i, '').trim() : undefined
+    return {
+      version: version || undefined,
+      url: body.html_url || undefined
+    }
+  } catch {
+    return {}
+  }
+}
+
 export async function versionInfo(checkLatest = true): Promise<VersionInfo> {
+  const [claudeCode, latestSdk, release] = await Promise.all([
+    claudeCodeVersion(),
+    checkLatest ? latestSdkVersion() : Promise.resolve(undefined),
+    checkLatest ? latestAppRelease() : Promise.resolve<{ version?: string; url?: string }>({})
+  ])
   return {
     app: app.getVersion(),
     electron: process.versions.electron || '',
     node: process.versions.node || '',
     sdk: sdkVersion(),
-    claudeCode: await claudeCodeVersion(),
-    latestSdk: checkLatest ? await latestSdkVersion() : undefined
+    claudeCode,
+    latestSdk,
+    latestApp: release.version,
+    releaseUrl: release.url
   }
 }

@@ -4,6 +4,10 @@ import * as models from '../../src/main/models'
 import * as extensions from '../../src/main/extensions'
 import * as background from '../../src/main/background'
 import * as files from '../../src/main/files'
+import * as git from '../../src/main/git'
+import * as contentSearch from '../../src/main/content-search'
+import { testWebSearch } from '../../src/main/web-search-client'
+import { copySessionToWorkspace } from '../../src/main/session-copy'
 import { PERMISSION_OPTIONS, EFFORT_OPTIONS, FALLBACK_COMMANDS } from '../../src/shared/ui-options'
 import { PROVIDER_PRESETS } from '../../src/shared/providers'
 import { listSessions, getSessionMessages, renameSession, tagSession, forkSession, deleteSession } from '@anthropic-ai/claude-agent-sdk'
@@ -23,6 +27,18 @@ export async function service(method: string, p: Params): Promise<unknown> {
     case 'settings:saveApi': return settings.saveApiSettings(p.patch)
     case 'settings:savePreferences': return settings.savePreferences(p.patch)
     case 'settings:savePermissionRules': return settings.savePermissionRules(p.rules)
+    case 'settings:webSearch': return settings.getWebSearchSettings()
+    case 'settings:saveWebSearch': return settings.saveWebSearchSettings(p.patch)
+    case 'settings:testWebSearch': {
+      const current = settings.getWebSearchConfig()
+      return testWebSearch('3PI Desk web search test', {
+        ...current,
+        ...(p.patch?.provider !== undefined ? { provider: p.patch.provider } : {}),
+        ...(p.patch?.endpoint !== undefined ? { endpoint: p.patch.endpoint } : {}),
+        ...(p.patch?.apiKey !== undefined ? { apiKey: p.patch.apiKey || '' } : {}),
+        ...(p.patch?.maxResults !== undefined ? { maxResults: p.patch.maxResults } : {})
+      })
+    }
     case 'settings:saveCustomModel': return settings.saveCustomModel(p.model)
     case 'settings:deleteCustomModel': return settings.deleteCustomModel(p.id, p.providerId)
     case 'settings:saveApiProfile': return settings.saveApiProfile(p.profile)
@@ -31,8 +47,8 @@ export async function service(method: string, p: Params): Promise<unknown> {
     case 'providers:list': return PROVIDER_PRESETS
     case 'models:list': return models.getModels()
     case 'models:test': return models.testApi(p.patch)
-    case 'sessions:list': return listSessions({ dir: p.cwd, limit: 60, includeWorktrees: true })
-    case 'sessions:all': return listSessions({ limit: 200, includeWorktrees: true })
+    case 'sessions:list': return listSessions({ dir: p.cwd, offset: p.offset || 0, limit: p.limit || 60, includeWorktrees: true })
+    case 'sessions:all': return listSessions({ offset: p.offset || 0, limit: p.limit || 200, includeWorktrees: true })
     case 'sessions:messages': return getSessionMessages(p.sessionId, { dir: p.cwd })
     case 'sessions:delete': {
       if (typeof p.sessionId !== 'string' || !/^[a-f0-9-]{36}$/i.test(p.sessionId)) throw new Error('Invalid session ID')
@@ -54,11 +70,21 @@ export async function service(method: string, p: Params): Promise<unknown> {
     case 'sessions:rename': return renameSession(p.sessionId, p.title, { dir: p.cwd })
     case 'sessions:tag': return tagSession(p.sessionId, p.tag, { dir: p.cwd })
     case 'sessions:fork': return forkSession(p.sessionId, { dir: p.cwd, upToMessageId: p.upToMessageId })
+    case 'sessions:copy': {
+      if (!p.sourceCwd?.trim() || !p.targetCwd?.trim()) throw new Error('Source and target workspace are required.')
+      return copySessionToWorkspace(p.sessionId, p.sourceCwd, p.targetCwd)
+    }
     case 'files:search': return files.searchFiles(p.cwd, p.query)
+    case 'files:searchContent': return contentSearch.searchContent(p.cwd, p.query, { limit: p.limit })
     case 'files:tree': return files.fileTree(p.cwd)
     case 'files:read': return files.readFileContent(p.cwd, p.path)
     case 'files:write': return files.writeFileContent(p.cwd, p.path, p.text)
     case 'files:attachments': return files.readAttachments(p.paths)
+    case 'git:status': return git.getGitStatus(p.cwd)
+    case 'git:diff': return git.getGitDiff(p.cwd, p.filePath)
+    case 'usage:history': return settings.getUsageHistory()
+    case 'usage:recordTurn': return settings.recordUsageTurn(p.record)
+    case 'usage:clearHistory': return settings.clearUsageHistory()
     case 'extensions:list': return extensions.listExtensions(p.cwd)
     case 'extensions:readMcp': return extensions.readMcpConfig(p.scope, p.cwd)
     case 'extensions:saveMcp': return extensions.saveMcpConfig(p.scope, p.cwd, p.text)

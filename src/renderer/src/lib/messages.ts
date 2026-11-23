@@ -31,6 +31,21 @@ function findTool(messages: UIMessage[], toolUseId: string): ToolBlock | undefin
   return undefined
 }
 
+function touchAssistant(message: AssistantMessage): void {
+  message.revision = (message.revision ?? 0) + 1
+}
+
+function assistantForTool(
+  messages: UIMessage[],
+  toolUseId: string
+): AssistantMessage | undefined {
+  return messages.find(
+    (message): message is AssistantMessage =>
+      message.role === 'assistant' &&
+      message.blocks.some((block) => block.kind === 'tool' && block.id === toolUseId)
+  )
+}
+
 function ensureAssistant(
   messages: UIMessage[],
   id: string,
@@ -46,7 +61,8 @@ function ensureAssistant(
     streaming: true,
     ts: Date.now(),
     parentToolUseId: parentToolUseId ?? null,
-    model
+    model,
+    revision: 0
   }
   messages.push(message)
   return message
@@ -157,10 +173,23 @@ export function mergeAssistantEntry(
 ): boolean {
   const existing = findAssistant(messages, entry.id)
   if (existing) {
-    const changed = mergeContent(existing, entry.content)
-    if (entry.model) existing.model = entry.model
-    if (entry.transcriptId) existing.transcriptId = entry.transcriptId
-    if (entry.parentToolUseId !== undefined) existing.parentToolUseId = entry.parentToolUseId
+    let changed = mergeContent(existing, entry.content)
+    if (entry.model && existing.model !== entry.model) {
+      existing.model = entry.model
+      changed = true
+    }
+    if (entry.transcriptId && existing.transcriptId !== entry.transcriptId) {
+      existing.transcriptId = entry.transcriptId
+      changed = true
+    }
+    if (
+      entry.parentToolUseId !== undefined &&
+      existing.parentToolUseId !== entry.parentToolUseId
+    ) {
+      existing.parentToolUseId = entry.parentToolUseId
+      changed = true
+    }
+    if (changed) touchAssistant(existing)
     return changed
   }
 
@@ -172,7 +201,8 @@ export function mergeAssistantEntry(
     ts: entry.ts ?? Date.now(),
     parentToolUseId: entry.parentToolUseId ?? null,
     model: entry.model,
-    transcriptId: entry.transcriptId
+    transcriptId: entry.transcriptId,
+    revision: 0
   })
   return true
 }
@@ -193,6 +223,7 @@ export function applyStreamEvent(
       rawEvent.message?.model
     )
     message.streaming = true
+    touchAssistant(message)
     return true
   }
 
@@ -213,6 +244,7 @@ export function applyStreamEvent(
       return false
     }
     message.streaming = true
+    touchAssistant(message)
     return true
   }
 
@@ -223,14 +255,17 @@ export function applyStreamEvent(
     const delta = rawEvent.delta || {}
     if (block.kind === 'text' && delta.type === 'text_delta') {
       block.text += String(delta.text ?? '')
+      touchAssistant(message)
       return true
     }
     if (block.kind === 'thinking' && delta.type === 'thinking_delta') {
       block.text += String(delta.thinking ?? '')
+      touchAssistant(message)
       return true
     }
     if (block.kind === 'tool' && delta.type === 'input_json_delta') {
       block.inputJson += String(delta.partial_json ?? '')
+      touchAssistant(message)
       return true
     }
     return false
@@ -245,11 +280,13 @@ export function applyStreamEvent(
     } catch {
       // keep streaming json as-is
     }
+    touchAssistant(message)
     return true
   }
 
   if (rawEvent.type === 'message_stop') {
     message.streaming = false
+    touchAssistant(message)
     return true
   }
 
@@ -302,6 +339,8 @@ export function applyUserMessage(messages: UIMessage[], event: RawEvent): boolea
     tool.status = block.is_error ? 'error' : 'done'
     tool.resultIsError = Boolean(block.is_error)
     tool.result = extractText(block.content)
+    const owner = assistantForTool(messages, String(block.tool_use_id))
+    if (owner) touchAssistant(owner)
     if (Array.isArray(block.content)) {
       const images = block.content
         .filter((item: RawEvent) => item?.type === 'image' && item.source?.data)
@@ -323,6 +362,7 @@ export function bindRewind(messages: UIMessage[], uuid: string): boolean {
     if (message.role !== 'user') continue
     if (message.rewindId === uuid) return false
     message.rewindId = uuid
+    message.revision = (message.revision ?? 0) + 1
     return true
   }
   return false
@@ -407,6 +447,8 @@ export function markToolStatus(
   if (!tool) return false
   tool.status = status
   if (result !== undefined) tool.result = result
+  const owner = assistantForTool(messages, toolUseId)
+  if (owner) touchAssistant(owner)
   return true
 }
 
@@ -415,6 +457,7 @@ export function markAllStreamingDone(messages: UIMessage[]): boolean {
   for (const message of messages) {
     if (message.role === 'assistant' && message.streaming) {
       message.streaming = false
+      touchAssistant(message)
       changed = true
     }
   }

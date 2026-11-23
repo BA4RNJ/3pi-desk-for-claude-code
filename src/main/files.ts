@@ -1,6 +1,7 @@
 import { dialog } from 'electron'
+import { realpathSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
-import { basename, relative } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import type {
   Attachment,
   AttachmentFailure,
@@ -230,9 +231,27 @@ export async function pickAttachmentFiles(): Promise<AttachmentPickResult> {
   return readAttachments(result.filePaths)
 }
 
+function nearestRealPath(target: string): string {
+  let current = resolve(target)
+  for (;;) {
+    try {
+      return realpathSync(current)
+    } catch {
+      const parent = dirname(current)
+      if (parent === current) return resolve(target)
+      current = parent
+    }
+  }
+}
+
 function isInside(cwd: string, target: string): boolean {
-  const root = cwd.endsWith('/') ? cwd : `${cwd}/`
-  return target === cwd || target.startsWith(root)
+  // Resolve symlinks on both sides. A lexical prefix check alone lets a
+  // symlinked directory inside the workspace point outside it, which matters
+  // now that remote browsers can call these APIs.
+  const root = nearestRealPath(cwd)
+  const resolvedTarget = nearestRealPath(target)
+  const rel = relative(root, resolvedTarget)
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
 export async function fileTree(cwd: string): Promise<FileNode[]> {

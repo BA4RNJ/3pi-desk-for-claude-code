@@ -18,11 +18,15 @@ import type {
   PermissionRequestPayload,
   PreferencesPatch,
   RewindPreview,
+  SessionCopyMode,
   SessionInfo,
   SessionStartOptions,
   SessionState,
   SettingsSnapshot,
-  TestApiResult
+  TestApiResult,
+  WebSearchPatch,
+  WebSearchSettings,
+  WebSearchTestResult
 } from '../../../shared/types'
 import { isNewerState, stateRevision } from '../../../shared/sessionState'
 import type {
@@ -43,155 +47,35 @@ import {
   usageFromHistory
 } from '../lib/messages'
 import { truncate } from '../lib/format'
-import { mergeUsage } from '../lib/usage'
+import { mergeUsage, summarizeUsage } from '../lib/usage'
 import { messagesToMarkdown, safeFileName } from '../lib/export'
 import { initialLanguage, setI18nLanguage, type Language } from '../i18n'
+import { initialTheme, useAppearanceEffects } from './useDeskAppearance'
+import {
+  emptyTab,
+  errorText,
+  FALLBACK_MODELS,
+  fallbackModelsFor,
+  questionNoticeText,
+  taskFromEvent,
+  toView
+} from './desk-helpers'
+export { FALLBACK_MODELS } from './desk-helpers'
 
-export const FALLBACK_MODELS: ModelOption[] = [
-  {
-    id: 'deepseek-v4.1-flash',
-    name: 'DeepSeek V4.1 Flash',
-    description: '快速 · 日常编码',
-    contextWindow: 1_000_000,
-    effortLevels: ['low', 'high', 'max'],
-    supportsImages: true,
-    pricing: {
-      inputPerMillion: 0.15,
-      outputPerMillion: 0.6,
-      cacheReadPerMillion: 0.003,
-      peakMultiplier: 2,
-      peakWindowsUtc: [
-        { days: [1, 2, 3, 4, 5], startHour: 1, endHour: 4 },
-        { days: [1, 2, 3, 4, 5], startHour: 6, endHour: 10 }
-      ]
-    }
-  },
-  {
-    id: 'deepseek-v4-pro',
-    name: 'DeepSeek V4 Pro',
-    description: '更强推理 · 复杂任务',
-    contextWindow: 1_000_000,
-    effortLevels: ['low', 'high', 'max'],
-    supportsImages: true,
-    pricing: {
-      inputPerMillion: 0.66,
-      outputPerMillion: 1.98,
-      cacheReadPerMillion: 0.022,
-      peakMultiplier: 2,
-      peakWindowsUtc: [
-        { days: [1, 2, 3, 4, 5], startHour: 1, endHour: 4 },
-        { days: [1, 2, 3, 4, 5], startHour: 6, endHour: 10 }
-      ]
-    }
-  }
-]
+const SESSION_PAGE_SIZE = 60
 
-
-const EMPTY_STATE: SessionState = {
-  running: false,
-  connecting: false,
-  cwd: '',
-  model: 'deepseek-v4.1-flash',
-  permissionMode: 'default',
-  effort: 'default'
-}
-
-function initialTheme(): ThemeMode {
-  const saved = localStorage.getItem('claude-desk-theme')
-  if (saved === 'light' || saved === 'dark' || saved === 'system') return saved
-  return 'system'
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
-
-function fallbackModelsFor(providerId?: string): ModelOption[] {
-  return providerId === 'opencode-go' ? FALLBACK_MODELS : []
-}
-
-function toView(tab: TabRuntimeData): TabView {
-  return {
-    id: tab.id,
-    cwd: tab.cwd,
-    title: tab.title,
-    messages: tab.messages.slice(),
-    state: { ...tab.state },
-    permissions: tab.permissions.slice(),
-    loadingHistory: tab.loadingHistory,
-    sessionId: tab.sessionId,
-    effort: tab.effort,
-    tasks: tab.tasks.slice(),
-    usage: tab.usage ? { ...tab.usage } : undefined,
-    commands: tab.commands.slice()
-  }
-}
-
-function emptyTab(
-  id: string,
-  cwd: string,
-  model: string,
-  sessionId?: string,
-  title?: string
-): TabRuntimeData {
-  return {
-    id,
-    cwd,
-    title: title || '新对话',
-    messages: [],
-    state: { ...EMPTY_STATE, cwd, model },
-    permissions: [],
-    loadingHistory: false,
-    sessionId,
-    effort: 'default',
-    tasks: [],
-    commands: FALLBACK_COMMANDS,
-    started: false,
-    streamIds: new Map()
-  }
-}
-
-function taskFromEvent(message: DesktopEvent): TabTask | null {
-  if (message.type !== 'system') return null
-  if (message.ambient) return null
-  if (message.subtype === 'task_started' || message.subtype === 'task_progress') {
-    const id = String(message.task_id || '')
-    if (!id) return null
-    return {
-      id,
-      description: String(message.description || '后台任务'),
-      subagentType: message.subagent_type ? String(message.subagent_type) : undefined,
-      status: 'running',
-      summary: message.summary ? String(message.summary) : undefined,
-      parentTaskId: message.parent_task_id ? String(message.parent_task_id) : undefined,
-      outputFile: message.output_file ? String(message.output_file) : undefined,
-      updatedAt: Date.now()
-    }
-  }
-  if (message.subtype === 'task_notification') {
-    const id = String(message.task_id || '')
-    if (!id) return null
-    return {
-      id,
-      description: String(message.summary || message.description || '后台任务'),
-      status:
-        message.status === 'completed'
-          ? 'completed'
-          : message.status === 'failed'
-            ? 'failed'
-            : 'stopped',
-      summary: message.summary ? String(message.summary) : undefined,
-      parentTaskId: message.parent_task_id ? String(message.parent_task_id) : undefined,
-      outputFile: message.output_file ? String(message.output_file) : undefined,
-      updatedAt: Date.now()
-    }
-  }
-  return null
+const EMPTY_WEB_SEARCH: WebSearchSettings = {
+  enabled: true,
+  provider: 'duckduckgo',
+  endpoint: '',
+  hasApiKey: false,
+  apiKeyMasked: '',
+  maxResults: 6
 }
 
 export function useDesk() {
   const [booted, setBooted] = useState(false)
+  const [bootError, setBootError] = useState('')
   const [defaults, setDefaults] = useState<AppDefaults | null>(null)
   const [settings, setSettings] = useState<SettingsSnapshot | null>(null)
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS)
@@ -205,50 +89,49 @@ export function useDesk() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<SessionInfo | null>(null)
   const [claudeCli, setClaudeCli] = useState<ClaudeCliStatus | null>(null)
+  const [sessionsHasMore, setSessionsHasMore] = useState(false)
+  const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false)
+  /** Last tab that received a message from another client (phone/desktop). */
+  const [remoteActivity, setRemoteActivity] = useState<
+    { tabId: string; at: number } | null
+  >(null)
 
   const tabsRef = useRef(new Map<string, TabRuntimeData>())
   const tabOrderRef = useRef<string[]>([])
   const activeTabIdRef = useRef('')
   const sessionsRef = useRef<SessionInfo[]>([])
+  const sessionsOffset = useRef(0)
+  const sessionsCwd = useRef('')
   const cwdRef = useRef('')
   const settingsRef = useRef<SettingsSnapshot | null>(null)
   const modelsRef = useRef<ModelOption[]>(FALLBACK_MODELS)
   const publishTimers = useRef(new Map<string, number>())
   const stateRevisions = useRef(new Map<string, number>())
   const startingTabs = useRef(new Set<string>())
+  /** Tabs created locally but not yet confirmed by the shared registry. */
+  const pendingTabRegistration = useRef(new Set<string>())
   const chatSettingsQueue = useRef<Promise<void>>(Promise.resolve())
 
-  useEffect(() => {
-    const root = document.documentElement
-    const preferences = settings?.preferences
-    if (preferences) {
-      root.dataset.accent = preferences.accent || 'coral'
-      root.dataset.compact = preferences.compactMode ? 'true' : 'false'
-      root.style.setProperty('--ui-scale', String(preferences.fontScale || 1))
-    }
-  }, [settings?.preferences])
-
-  useEffect(() => {
-    const root = document.documentElement
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = (): void => {
-      const dark = theme === 'dark' || (theme === 'system' && media.matches)
-      root.dataset.theme = dark ? 'dark' : 'light'
-    }
-    apply()
-    media.addEventListener('change', apply)
-    localStorage.setItem('claude-desk-theme', theme)
-    return () => media.removeEventListener('change', apply)
-  }, [theme])
+  useAppearanceEffects(settings, theme)
 
   const applyState = useCallback((tab: TabRuntimeData, state: SessionState): boolean => {
     const previous = stateRevisions.current.get(tab.id)
     if (!isNewerState(previous, state)) return false
     const revision = stateRevision(state)
     if (revision !== undefined) stateRevisions.current.set(tab.id, revision)
+    const wasRunning = tab.state.running
     tab.state = state
+    if (tab.modelOverride) tab.state.model = tab.modelOverride
     tab.sessionId = state.sessionId || tab.sessionId
     tab.effort = state.effort
+    if (!wasRunning && state.running) {
+      tab.workStartedAt = Date.now()
+    } else if (wasRunning && !state.running) {
+      if (tab.workStartedAt) {
+        tab.workElapsedMs += Math.max(0, Date.now() - tab.workStartedAt)
+      }
+      tab.workStartedAt = undefined
+    }
     return true
   }, [])
 
@@ -268,23 +151,131 @@ export function useDesk() {
     [publish]
   )
 
+  const loadTabHistory = useCallback(
+    async (tab: TabRuntimeData): Promise<void> => {
+      if (!tab.sessionId || tab.messages.length > 0 || tab.loadingHistory) return
+      tab.loadingHistory = true
+      publish(tab)
+      try {
+        const raw = await window.desk.getSessionMessages(tab.sessionId, tab.cwd)
+        tab.messages = historyToMessages(raw)
+        tab.usage = usageFromHistory(raw, tab.state.model)
+        publish(tab)
+      } catch {
+        // History is best-effort; the live event stream still works.
+      } finally {
+        tab.loadingHistory = false
+        publish(tab)
+      }
+    },
+    [publish]
+  )
+
+  const replayLiveEvents = useCallback(
+    (tab: TabRuntimeData, events: DesktopEvent[]): void => {
+      for (const message of events) {
+        if (message.type === 'stream_event') {
+          const key = String(message.parent_tool_use_id || 'main')
+          const streamEvent = message.event || {}
+          if (streamEvent.type === 'message_start' && streamEvent.message?.id) {
+            tab.streamIds.set(key, String(streamEvent.message.id))
+          }
+          applyStreamEvent(
+            tab.messages,
+            tab.streamIds.get(key),
+            message.parent_tool_use_id,
+            streamEvent
+          )
+        } else {
+          applyEvent(tab.messages, message)
+        }
+      }
+      publish(tab)
+    },
+    [publish]
+  )
+
+  const restoreTabs = useCallback(async (): Promise<void> => {
+    let list: Awaited<ReturnType<typeof window.desk.listTabs>> = []
+    try {
+      list = await window.desk.listTabs()
+    } catch {
+      return
+    }
+    if (list.length === 0) return
+    for (const remote of list) {
+      if (tabsRef.current.has(remote.id)) continue
+      const tab = emptyTab(
+        remote.id,
+        remote.cwd,
+        remote.state?.model || settingsRef.current?.api.model || FALLBACK_MODELS[0].id,
+        remote.sessionId,
+        remote.title
+      )
+      tab.state = remote.state
+      tab.permissions = remote.permissions
+      tab.tasks = remote.tasks
+      tab.effort = remote.effort
+      tab.usage = remote.usage
+      tab.commands = remote.commands
+      tab.workElapsedMs = remote.workElapsedMs
+      tab.workStartedAt = remote.workStartedAt
+      tab.started = remote.started
+      tabsRef.current.set(tab.id, tab)
+      tabOrderRef.current = [...tabOrderRef.current, tab.id]
+      publish(tab)
+      if (remote.liveEvents?.length) replayLiveEvents(tab, remote.liveEvents)
+    }
+    setTabOrder([...tabOrderRef.current])
+    let active = ''
+    try {
+      active = localStorage.getItem('3pi-active-tab') || ''
+    } catch {
+      active = ''
+    }
+    if (!active || !tabsRef.current.has(active)) {
+      active = tabOrderRef.current[tabOrderRef.current.length - 1] || ''
+    }
+    if (active) {
+      activeTabIdRef.current = active
+      setActiveTabIdState(active)
+      const tab = tabsRef.current.get(active)
+      if (tab) {
+        cwdRef.current = tab.cwd
+        setCwd(tab.cwd)
+        if (tab.sessionId) void loadTabHistory(tab)
+      }
+    }
+  }, [loadTabHistory, publish, replayLiveEvents])
+
   const refreshSessions = useCallback(
     async (directory?: string) => {
       const active = tabsRef.current.get(activeTabIdRef.current)
       const target = directory || active?.cwd || cwdRef.current
       if (!target) return
       try {
+        if (sessionsCwd.current !== target) {
+          sessionsCwd.current = target
+          sessionsOffset.current = 0
+        }
         const hidden = new Set(settingsRef.current?.preferences.hiddenSessions || [])
-        const list = (await window.desk.listSessions(target)).filter(
-          (session) => !hidden.has(session.sessionId)
-        )
+        const limit = Math.max(SESSION_PAGE_SIZE, sessionsOffset.current)
+        const raw = await window.desk.listSessions(target, 0, limit)
+        const list = raw.filter((session) => !hidden.has(session.sessionId))
+        sessionsOffset.current = raw.length
         sessionsRef.current = list
         setSessions(list)
+        setSessionsHasMore(raw.length >= limit)
+        setSessionsLoadingMore(false)
         for (const tab of tabsRef.current.values()) {
           if (!tab.sessionId) continue
           const session = list.find((item) => item.sessionId === tab.sessionId)
           if (session) {
-            tab.title = session.customTitle || session.summary || tab.title
+            const nextTitle = session.customTitle || session.summary || tab.title
+            if (nextTitle && nextTitle !== tab.title) {
+              tab.title = nextTitle
+              void window.desk.renameTab(tab.id, nextTitle).catch(() => undefined)
+            }
           }
         }
         for (const tab of tabsRef.current.values()) publish(tab)
@@ -295,6 +286,32 @@ export function useDesk() {
     [publish]
   )
 
+  const loadMoreSessions = useCallback(async (directory?: string): Promise<void> => {
+    const active = tabsRef.current.get(activeTabIdRef.current)
+    const target = directory || active?.cwd || cwdRef.current
+    if (!target || sessionsLoadingMore || !sessionsHasMore) return
+    setSessionsLoadingMore(true)
+    try {
+      const hidden = new Set(settingsRef.current?.preferences.hiddenSessions || [])
+      const raw = await window.desk.listSessions(
+        target,
+        sessionsOffset.current,
+        SESSION_PAGE_SIZE
+      )
+      sessionsOffset.current += raw.length
+      const list = raw.filter((session) => !hidden.has(session.sessionId))
+      const seen = new Set(sessionsRef.current.map((session) => session.sessionId))
+      const merged = [...sessionsRef.current, ...list.filter((item) => !seen.has(item.sessionId))]
+      sessionsRef.current = merged
+      setSessions(merged)
+      setSessionsHasMore(raw.length >= SESSION_PAGE_SIZE)
+    } catch {
+      // ignore listing errors
+    } finally {
+      setSessionsLoadingMore(false)
+    }
+  }, [sessionsHasMore, sessionsLoadingMore])
+
   const activateTab = useCallback(
     (id: string) => {
       const tab = tabsRef.current.get(id)
@@ -303,9 +320,15 @@ export function useDesk() {
       setActiveTabIdState(id)
       cwdRef.current = tab.cwd
       setCwd(tab.cwd)
+      try {
+        localStorage.setItem('3pi-active-tab', id)
+      } catch {
+        // ignore
+      }
+      if (tab.sessionId && tab.messages.length === 0) void loadTabHistory(tab)
       void refreshSessions(tab.cwd)
     },
-    [refreshSessions]
+    [loadTabHistory, refreshSessions]
   )
 
   const rememberWorkspace = useCallback(
@@ -314,7 +337,7 @@ export function useDesk() {
       if (!current || !path) return
       const list = current.preferences.recentWorkspaces || []
       if (list[0] === path) return
-      const next = [path, ...list.filter((item) => item !== path)].slice(0, 12)
+      const next = [path, ...list.filter((item) => item !== path)].slice(0, 200)
       if (next.length === list.length && next.every((item, index) => item === list[index])) {
         return
       }
@@ -400,6 +423,18 @@ export function useDesk() {
       tabOrderRef.current = [...tabOrderRef.current, id]
       setTabOrder(tabOrderRef.current)
       publish(tab)
+      pendingTabRegistration.current.add(id)
+      void window.desk
+        .createTab({
+          id,
+          cwd: targetCwd,
+          title: tab.title,
+          sessionId: options?.sessionId
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          window.setTimeout(() => pendingTabRegistration.current.delete(id), 3000)
+        })
       if (options?.activate !== false) activateTab(id)
       void rememberWorkspace(targetCwd)
       return id
@@ -411,10 +446,12 @@ export function useDesk() {
     (id: string) => {
       const tab = tabsRef.current.get(id)
       if (!tab) return
+      void window.desk.closeTab(id).catch(() => undefined)
       void window.desk.stopSession(id).catch(() => undefined)
       tabsRef.current.delete(id)
       stateRevisions.current.delete(id)
       startingTabs.current.delete(id)
+      pendingTabRegistration.current.delete(id)
       const order = tabOrderRef.current.filter((item) => item !== id)
       tabOrderRef.current = order
       setTabOrder(order)
@@ -425,15 +462,26 @@ export function useDesk() {
       })
       if (activeTabIdRef.current === id) {
         const next = order[order.length - 1]
-        if (next) activateTab(next)
-        else addTab()
+        if (next) {
+          activateTab(next)
+        } else {
+          activeTabIdRef.current = ''
+          setActiveTabIdState('')
+          cwdRef.current = tab.cwd
+          setCwd(tab.cwd)
+          void refreshSessions(tab.cwd)
+        }
       }
     },
-    [activateTab, addTab]
+    [activateTab, refreshSessions]
   )
 
   const pushNotice = useCallback(
-    (tab: TabRuntimeData, text: string, tone: 'info' | 'error' = 'info') => {
+    (
+      tab: TabRuntimeData,
+      text: string,
+      tone: 'info' | 'error' | 'attention' = 'info'
+    ) => {
       tab.messages.push({
         id: newId(),
         role: 'notice',
@@ -494,6 +542,7 @@ export function useDesk() {
             : undefined)
         if (rewindUuid) bindRewind(tab.messages, String(rewindUuid))
         const key = String(message.parent_tool_use_id || 'main')
+        tab.rateMeter.handleStreamEvent(key, streamEvent)
         if (streamEvent.type === 'message_start' && streamEvent.message?.id) {
           tab.streamIds.set(key, String(streamEvent.message.id))
         }
@@ -522,7 +571,7 @@ export function useDesk() {
           connecting: false,
           sessionId: message.session_id,
           cwd: message.cwd || tab.state.cwd,
-          model: message.model || tab.state.model,
+          model: tab.modelOverride || message.model || tab.state.model,
           permissionMode: message.permissionMode || tab.state.permissionMode
         }
         tab.sessionId = message.session_id || tab.sessionId
@@ -573,13 +622,69 @@ export function useDesk() {
 
       if (message.type === 'result') {
         const delta = message.model_usage_since_last_result
+        let turnOutputTokens: number | undefined
+        let turnDeltaUsage: Record<string, TokenUsage> | undefined
         if (delta && typeof delta === 'object' && Object.keys(delta).length > 0) {
-          tab.usage = mergeUsage(tab.usage, delta as Record<string, TokenUsage>)
+          const deltaUsage = delta as Record<string, TokenUsage>
+          turnDeltaUsage = deltaUsage
+          turnOutputTokens = Object.values(deltaUsage).reduce(
+            (sum, item) => sum + (item.outputTokens || 0),
+            0
+          )
+          tab.usage = mergeUsage(tab.usage, deltaUsage)
           schedulePublish(tab)
         } else if (message.modelUsage && typeof message.modelUsage === 'object') {
-          tab.usage = message.modelUsage as Record<string, TokenUsage>
+          const nextUsage = message.modelUsage as Record<string, TokenUsage>
+          const prevInput = Object.values(tab.usage || {}).reduce(
+            (sum, item) => sum + (item.inputTokens || 0),
+            0
+          )
+          const previousOutput = Object.values(tab.usage || {}).reduce(
+            (sum, item) => sum + (item.outputTokens || 0),
+            0
+          )
+          const prevCache = Object.values(tab.usage || {}).reduce(
+            (sum, item) => sum + (item.cacheReadInputTokens || 0),
+            0
+          )
+          const nextInput = Object.values(nextUsage).reduce(
+            (sum, item) => sum + (item.inputTokens || 0),
+            0
+          )
+          const nextOutput = Object.values(nextUsage).reduce(
+            (sum, item) => sum + (item.outputTokens || 0),
+            0
+          )
+          const nextCache = Object.values(nextUsage).reduce(
+            (sum, item) => sum + (item.cacheReadInputTokens || 0),
+            0
+          )
+          turnOutputTokens = Math.max(0, nextOutput - previousOutput)
+          turnDeltaUsage = {
+            [tab.state.model || 'default']: {
+              inputTokens: Math.max(0, nextInput - prevInput),
+              outputTokens: turnOutputTokens,
+              cacheReadInputTokens: Math.max(0, nextCache - prevCache),
+              cacheCreationInputTokens: 0
+            }
+          }
+          tab.usage = nextUsage
           schedulePublish(tab)
         }
+        if (turnDeltaUsage) {
+          const turnSummary = summarizeUsage(turnDeltaUsage, modelsRef.current)
+          void window.desk
+            .recordUsageTurn({
+              cwd: tab.cwd,
+              model: tab.state.model,
+              inputTokens: turnSummary.inputTokens,
+              outputTokens: turnSummary.outputTokens,
+              cacheReadTokens: turnSummary.cacheReadTokens,
+              costUsd: turnSummary.costUsd || Number(message.total_cost_usd) || 0
+            })
+            .catch(() => undefined)
+        }
+        tab.rateMeter.endTurn(turnOutputTokens)
         updateTitleFromMessages(tab)
         if (
           !document.hasFocus() &&
@@ -588,7 +693,7 @@ export function useDesk() {
         ) {
           const failed = message.subtype !== 'success'
           new Notification('3PI Desk', {
-            body: `${tab.title}${failed ? ' failed' : ' completed'}`,
+            body: `${tab.title}${failed ? ' 任务失败' : ' 已完成'}`,
             silent: false
           })
         }
@@ -599,7 +704,42 @@ export function useDesk() {
     const offPermission = window.desk.onPermission(({ tabId, request }) => {
       const tab = tabsRef.current.get(tabId)
       if (!tab) return
-      tab.permissions = [...tab.permissions, request]
+      if (!tab.permissions.some((item) => item.id === request.id)) {
+        tab.permissions = [...tab.permissions, request]
+        if (request.kind === 'question') {
+          // Bind the prompt to its conversation and leave a durable in-chat
+          // marker for it. The inline QuestionBar itself only renders in the
+          // owning tab, so other conversations never show this request.
+          tab.messages.push({
+            id: newId(),
+            role: 'notice',
+            text: questionNoticeText(request),
+            tone: 'attention',
+            ts: Date.now()
+          })
+        }
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([120, 60, 120])
+          } catch {
+            // ignore
+          }
+        }
+        if (
+          (!document.hasFocus() || tabId !== activeTabIdRef.current) &&
+          'Notification' in window &&
+          Notification.permission === 'granted'
+        ) {
+          const promptLabel =
+            request.kind === 'question'
+              ? questionNoticeText(request)
+              : `${tab.title} 需要你的权限确认：${request.displayName || request.toolName}`
+          new Notification('3PI Desk', {
+            body: promptLabel,
+            silent: false
+          })
+        }
+      }
       if (markToolStatus(tab.messages, request.toolUseID, 'pending')) {
         schedulePublish(tab)
       } else {
@@ -633,6 +773,152 @@ export function useDesk() {
   ])
 
   useEffect(() => {
+    const offTabs = window.desk.onTabsChanged(({ tabs: list }) => {
+      const seen = new Set(list.map((item) => item.id))
+      for (const remote of list) {
+        pendingTabRegistration.current.delete(remote.id)
+        const existing = tabsRef.current.get(remote.id)
+        if (existing) {
+          existing.cwd = remote.cwd || existing.cwd
+          existing.title = remote.title || existing.title
+          existing.sessionId = remote.sessionId || existing.sessionId
+          existing.state = remote.state || existing.state
+          existing.permissions = remote.permissions || existing.permissions
+          existing.tasks = remote.tasks || existing.tasks
+          existing.effort = remote.effort || existing.effort
+          existing.usage = remote.usage || existing.usage
+          existing.commands = remote.commands || existing.commands
+          existing.workElapsedMs = remote.workElapsedMs
+          existing.workStartedAt = remote.workStartedAt
+          existing.started = remote.started
+          publish(existing)
+          if (remote.state?.running && remote.liveEvents?.length) {
+            replayLiveEvents(existing, remote.liveEvents)
+          }
+        } else {
+          const tab = emptyTab(
+            remote.id,
+            remote.cwd,
+            remote.state?.model || settingsRef.current?.api.model || FALLBACK_MODELS[0].id,
+            remote.sessionId,
+            remote.title
+          )
+          tab.state = remote.state
+          tab.permissions = remote.permissions
+          tab.tasks = remote.tasks
+          tab.effort = remote.effort
+          tab.usage = remote.usage
+          tab.commands = remote.commands
+          tab.workElapsedMs = remote.workElapsedMs
+          tab.workStartedAt = remote.workStartedAt
+          tab.started = remote.started
+          tabsRef.current.set(tab.id, tab)
+          tabOrderRef.current = [...tabOrderRef.current, tab.id]
+          setTabOrder([...tabOrderRef.current])
+          publish(tab)
+          if (remote.liveEvents?.length) replayLiveEvents(tab, remote.liveEvents)
+          if (remote.sessionId && remote.state?.running) {
+            void window.desk
+              .snapshotTab(remote.id)
+              .then((snapshot) => {
+                if (snapshot?.liveEvents?.length) {
+                  replayLiveEvents(tab, snapshot.liveEvents)
+                }
+              })
+              .catch(() => undefined)
+          }
+        }
+      }
+      for (const id of [...tabsRef.current.keys()]) {
+        if (seen.has(id)) continue
+        if (pendingTabRegistration.current.has(id)) continue
+        const tab = tabsRef.current.get(id)
+        tabsRef.current.delete(id)
+        stateRevisions.current.delete(id)
+        startingTabs.current.delete(id)
+        tabOrderRef.current = tabOrderRef.current.filter((item) => item !== id)
+        setTabs((previous) => {
+          const next = { ...previous }
+          delete next[id]
+          return next
+        })
+        setTabOrder([...tabOrderRef.current])
+        if (activeTabIdRef.current === id) {
+          const next = tabOrderRef.current[tabOrderRef.current.length - 1]
+          if (next) {
+            const nextTab = tabsRef.current.get(next)
+            if (nextTab) {
+              activeTabIdRef.current = next
+              setActiveTabIdState(next)
+              cwdRef.current = nextTab.cwd
+              setCwd(nextTab.cwd)
+              if (nextTab.sessionId && nextTab.messages.length === 0) {
+                void loadTabHistory(nextTab)
+              }
+            }
+          } else {
+            activeTabIdRef.current = ''
+            setActiveTabIdState('')
+            if (tab) {
+              cwdRef.current = tab.cwd
+              setCwd(tab.cwd)
+            }
+          }
+        }
+      }
+    })
+
+    const offUser = window.desk.onUserMessage(({ tabId, message, source }) => {
+      const tab = tabsRef.current.get(tabId)
+      if (!tab) return
+      const duplicate = tab.messages.some(
+        (item) =>
+          item.role === 'user' &&
+          ((item.transcriptId && item.transcriptId === message.uuid) ||
+            (item.rewindId && item.rewindId === message.uuid))
+      )
+      if (duplicate) return
+      tab.messages.push({
+        id: message.uuid || newId(),
+        role: 'user',
+        text: message.text,
+        attachments: message.attachments,
+        rewindId: message.uuid,
+        transcriptId: message.uuid,
+        ts: message.ts || Date.now()
+      })
+      updateTitleFromMessages(tab)
+      schedulePublish(tab)
+      if (source === 'remote' && tabId !== activeTabIdRef.current) {
+        setRemoteActivity({ tabId, at: Date.now() })
+      }
+    })
+
+    const offSettings = window.desk.onSettingsChanged((next) => {
+      settingsRef.current = next
+      setSettings(next)
+    })
+
+    const offSessions = window.desk.onSessionsChanged(({ cwd }) => {
+      void refreshSessions(cwd)
+    })
+
+    return () => {
+      offTabs()
+      offUser()
+      offSettings()
+      offSessions()
+    }
+  }, [
+    loadTabHistory,
+    publish,
+    refreshSessions,
+    replayLiveEvents,
+    schedulePublish,
+    updateTitleFromMessages
+  ])
+
+  useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       void Notification.requestPermission().catch(() => undefined)
     }
@@ -657,12 +943,8 @@ export function useDesk() {
 
   useEffect(() => {
     let disposed = false
-    Promise.all([
-      window.desk.getDefaults(),
-      window.desk.getSettings(),
-      window.desk.getModels()
-    ])
-      .then(async ([defaultsValue, settingsValue, modelList]) => {
+    Promise.all([window.desk.getDefaults(), window.desk.getSettings()])
+      .then(async ([defaultsValue, settingsValue]) => {
         if (disposed) return
         setDefaults(defaultsValue)
         cwdRef.current = defaultsValue.cwd
@@ -673,7 +955,7 @@ export function useDesk() {
           ...(settingsValue.preferences.recentWorkspaces || [])
         ]
           .filter((path, index, list) => Boolean(path) && list.indexOf(path) === index)
-          .slice(0, 12)
+          .slice(0, 200)
         let effectiveSettings = settingsValue
         try {
           const preferences = await window.desk.savePreferences({
@@ -685,39 +967,42 @@ export function useDesk() {
         }
         settingsRef.current = effectiveSettings
         setSettings(effectiveSettings)
-        const nextModels =
-          modelList.length > 0
-            ? modelList
-            : fallbackModelsFor(settingsValue.api.providerId)
+        const nextModels = [...fallbackModelsFor(settingsValue.api.providerId)]
+        if (
+          settingsValue.api.model &&
+          !nextModels.some((model) => model.id === settingsValue.api.model)
+        ) {
+          nextModels.push({
+            id: settingsValue.api.model,
+            name: settingsValue.api.model
+          })
+        }
         modelsRef.current = nextModels
         setModels(nextModels)
-        const model = effectiveSettings.api.model || nextModels[0]?.id || 'deepseek-v4.1-flash'
-        const id = newId()
-        const tab = emptyTab(id, defaultsValue.cwd, model)
-        applyLastChatSettings(tab)
-        tabsRef.current.set(id, tab)
-        tabOrderRef.current = [id]
-        setTabOrder([id])
-        publish(tab)
-        activateTab(id)
+        setBootError('')
         setBooted(true)
+        void restoreTabs()
+        void refreshSessions(defaultsValue.cwd)
+        // Model discovery can be slow or unreachable; never block the project
+        // home on it. The fallback/synthetic model is enough to start a chat.
+        void window.desk
+          .getModels()
+          .then((list) => {
+            if (disposed || list.length === 0) return
+            modelsRef.current = list
+            setModels(list)
+          })
+          .catch(() => undefined)
       })
       .catch((error) => {
         if (disposed) return
-        const id = newId()
-        const tab = emptyTab(id, cwdRef.current || '', 'deepseek-v4.1-flash')
-        tabsRef.current.set(id, tab)
-        tabOrderRef.current = [id]
-        setTabOrder([id])
-        publish(tab)
-        activateTab(id)
-        pushNotice(tab, `初始化失败：${errorText(error)}`, 'error')
+        setBootError(`初始化失败：${errorText(error)}`)
         setBooted(true)
       })
     return () => {
       disposed = true
     }
-  }, [activateTab, applyLastChatSettings, publish, pushNotice])
+  }, [refreshSessions, restoreTabs])
 
   const ensureSession = useCallback(async (tab: TabRuntimeData) => {
     if (tab.started) return
@@ -747,9 +1032,24 @@ export function useDesk() {
       if (!booted) return
       const tab = tabsRef.current.get(activeTabIdRef.current)
       if (!tab) return
-      if (tab.state.running || startingTabs.current.has(tab.id)) return
+      if (startingTabs.current.has(tab.id)) return
       const trimmed = text.trim()
       if (!trimmed && attachments.length === 0) return
+
+      // /help is a terminal-only command in headless mode, so answer it
+      // locally with the command list the composer already knows about.
+      if (trimmed === '/help' && attachments.length === 0) {
+        tab.messages.push({
+          id: newId(),
+          role: 'notice',
+          text: '斜杠命令',
+          tone: 'info',
+          help: tab.commands.length > 0 ? tab.commands : FALLBACK_COMMANDS,
+          ts: Date.now()
+        })
+        schedulePublish(tab)
+        return
+      }
 
       startingTabs.current.add(tab.id)
       try {
@@ -762,9 +1062,19 @@ export function useDesk() {
       }
 
       const turnId = newId()
+      // A new turn gets a fresh live-rate meter; the previous turn's number
+      // must not look like it describes the new generation.
+      tab.rateMeter.reset()
       // Show the stop control immediately; the authoritative state snapshot
-      // follows from the main process.
-      tab.state = { ...tab.state, running: true, error: undefined }
+      // follows from the main process. Sending while a turn is running just
+      // queues another turn in the SDK's streaming input.
+      if (!tab.state.running) tab.workStartedAt = Date.now()
+      tab.state = {
+        ...tab.state,
+        running: true,
+        pendingTurns: (tab.state.pendingTurns || 0) + 1,
+        error: undefined
+      }
       tab.messages.push({
         id: turnId,
         role: 'user',
@@ -784,7 +1094,17 @@ export function useDesk() {
           uuid: turnId
         })
       } catch (error) {
-        tab.state = { ...tab.state, running: false }
+        const pendingTurns = Math.max(0, (tab.state.pendingTurns || 1) - 1)
+        const stillRunning = tab.state.running && pendingTurns > 0
+        if (!stillRunning && tab.workStartedAt) {
+          tab.workElapsedMs += Math.max(0, Date.now() - tab.workStartedAt)
+          tab.workStartedAt = undefined
+        }
+        tab.state = {
+          ...tab.state,
+          pendingTurns,
+          running: stillRunning
+        }
         publish(tab)
         pushNotice(tab, `发送失败：${errorText(error)}`, 'error')
       }
@@ -823,18 +1143,73 @@ export function useDesk() {
     newChat(directory)
   }, [newChat])
 
+  const openProject = useCallback(
+    async (path: string): Promise<void> => {
+      if (!path) return
+      cwdRef.current = path
+      setCwd(path)
+      void window.desk.saveCwd(path)
+      sessionsRef.current = []
+      sessionsOffset.current = 0
+      sessionsCwd.current = path
+      setSessions([])
+      await rememberWorkspace(path).catch(() => undefined)
+      await refreshSessions(path)
+    },
+    [refreshSessions, rememberWorkspace]
+  )
+
+  const relocateWorkspace = useCallback(
+    async (oldPath: string, newPath: string) => {
+      const busy = [...tabsRef.current.values()].some(
+        (tab) =>
+          tab.cwd === oldPath &&
+          (tab.state.running || tab.state.connecting || startingTabs.current.has(tab.id))
+      )
+      if (busy) {
+        throw new Error('该项目还有运行中的任务，请先停止后再重新定位。')
+      }
+      const result = await window.desk.relocateWorkspace(oldPath, newPath)
+      const current = settingsRef.current
+      if (current) {
+        const updated = { ...current, preferences: result.preferences }
+        settingsRef.current = updated
+        setSettings(updated)
+      }
+      // Tabs bound to the old path cannot start new turns; the chats are
+      // available from the relocated project.
+      for (const tab of [...tabsRef.current.values()]) {
+        if (tab.cwd === oldPath) closeTab(tab.id)
+      }
+      return result
+    },
+    [closeTab]
+  )
+
+  const pickProject = useCallback(async (): Promise<string | null> => {
+    const directory = await window.desk.pickDirectory(cwdRef.current)
+    if (!directory) return null
+    await openProject(directory)
+    return directory
+  }, [openProject])
+
   const selectSession = useCallback(
     async (sessionId: string, cwdOverride?: string) => {
+      const info = sessionsRef.current.find((item) => item.sessionId === sessionId)
+      const active = tabsRef.current.get(activeTabIdRef.current)
+      const targetCwd = cwdOverride || info?.cwd || active?.cwd || cwdRef.current
       const existing = [...tabsRef.current.values()].find(
         (tab) => tab.sessionId === sessionId
       )
       if (existing) {
-        activateTab(existing.id)
-        return
+        if (!cwdOverride || existing.cwd === targetCwd) {
+          activateTab(existing.id)
+          return
+        }
+        // The same chat is open under a stale (renamed/moved) workspace;
+        // reopen it from the workspace the caller asked for.
+        closeTab(existing.id)
       }
-      const info = sessionsRef.current.find((item) => item.sessionId === sessionId)
-      const active = tabsRef.current.get(activeTabIdRef.current)
-      const targetCwd = cwdOverride || info?.cwd || active?.cwd || cwdRef.current
       const id = addTab({
         cwd: targetCwd,
         sessionId,
@@ -893,6 +1268,7 @@ export function useDesk() {
       activateTab,
       addTab,
       applyState,
+      closeTab,
       persistChatSettings,
       publish,
       pushNotice,
@@ -902,32 +1278,85 @@ export function useDesk() {
   )
 
   const renameSession = useCallback(
-    async (sessionId: string, title: string) => {
-      const tab = tabsRef.current.get(activeTabIdRef.current)
-      if (!tab) return
+    async (sessionId: string, title: string, cwdOverride?: string) => {
+      const active = tabsRef.current.get(activeTabIdRef.current)
+      const info = sessionsRef.current.find((item) => item.sessionId === sessionId)
+      const cwd = cwdOverride || info?.cwd || active?.cwd || cwdRef.current
+      if (!cwd) return
       try {
-        await window.desk.renameSession(sessionId, title, tab.cwd)
-        await refreshSessions(tab.cwd)
+        await window.desk.renameSession(sessionId, title, cwd)
+        await refreshSessions(cwd)
+        if (active) pushNotice(active, '会话已重命名')
       } catch (error) {
-        pushNotice(tab, `重命名失败：${errorText(error)}`, 'error')
+        if (active) pushNotice(active, `重命名失败：${errorText(error)}`, 'error')
       }
     },
     [pushNotice, refreshSessions]
   )
 
   const forkSession = useCallback(
-    async (sessionId: string) => {
-      const tab = tabsRef.current.get(activeTabIdRef.current)
-      if (!tab) return
+    async (sessionId: string, cwdOverride?: string) => {
+      const active = tabsRef.current.get(activeTabIdRef.current)
+      const info = sessionsRef.current.find((item) => item.sessionId === sessionId)
+      const cwd = cwdOverride || info?.cwd || active?.cwd || cwdRef.current
+      if (!cwd) return
       try {
-        const forkedId = await window.desk.forkSession(sessionId, tab.cwd)
-        await refreshSessions(tab.cwd)
-        await selectSession(forkedId)
+        const forkedId = await window.desk.forkSession(sessionId, cwd)
+        await refreshSessions(cwd)
+        await selectSession(forkedId, cwd)
       } catch (error) {
-        pushNotice(tab, `创建分支失败：${errorText(error)}`, 'error')
+        if (active) pushNotice(active, `创建分支失败：${errorText(error)}`, 'error')
       }
     },
     [pushNotice, refreshSessions, selectSession]
+  )
+
+  const copySession = useCallback(
+    async (
+      session: SessionInfo,
+      targetCwd: string,
+      mode: SessionCopyMode
+    ): Promise<string> => {
+      const sourceCwd =
+        session.cwd ||
+        tabsRef.current.get(activeTabIdRef.current)?.cwd ||
+        cwdRef.current
+      const newId = await window.desk.copySession(
+        session.sessionId,
+        sourceCwd,
+        targetCwd,
+        mode
+      )
+      const title = session.customTitle || session.summary
+      if (title) {
+        await window.desk
+          .renameSession(newId, title, targetCwd)
+          .catch(() => undefined)
+      }
+      if (mode === 'move') {
+        const current = settingsRef.current
+        const hidden = current?.preferences.hiddenSessions || []
+        if (current && !hidden.includes(session.sessionId)) {
+          const preferences = await window.desk.savePreferences({
+            hiddenSessions: [...hidden, session.sessionId]
+          })
+          const updated = { ...current, preferences }
+          settingsRef.current = updated
+          setSettings(updated)
+        }
+      }
+      await rememberWorkspace(targetCwd).catch(() => undefined)
+      await refreshSessions(targetCwd)
+      await selectSession(newId, targetCwd)
+      if (mode === 'move') {
+        const oldTab = [...tabsRef.current.values()].find(
+          (tab) => tab.sessionId === session.sessionId
+        )
+        if (oldTab) closeTab(oldTab.id)
+      }
+      return newId
+    },
+    [closeTab, refreshSessions, rememberWorkspace, selectSession]
   )
 
   const respondPermission = useCallback(
@@ -1091,6 +1520,7 @@ export function useDesk() {
 
       const previous = previousTranscript(tab, messageId)
       const oldSessionId = tab.sessionId
+      const previousTitle = tab.title
       let forkedId: string | undefined
       try {
         if (oldSessionId && previous) {
@@ -1116,12 +1546,27 @@ export function useDesk() {
           // Keep the local slice if history cannot be loaded.
         }
       }
+      if (forkedId && previousTitle && previousTitle !== '新对话') {
+        // A fork normally gets a "(fork)" summary. Keep the original title so
+        // edit/withdraw feels like the same conversation continues.
+        try {
+          await window.desk.renameSession(forkedId, previousTitle, tab.cwd)
+        } catch {
+          // Best effort; the tab keeps the local title below.
+        }
+      }
+      if (tab.workStartedAt) {
+        tab.workElapsedMs += Math.max(0, Date.now() - tab.workStartedAt)
+        tab.workStartedAt = undefined
+      }
       tab.messages = remaining
       tab.tasks = []
       tab.streamIds.clear()
+      tab.rateMeter.reset()
       tab.permissions = []
       tab.sessionId = forkedId
       tab.started = false
+      tab.title = previousTitle || tab.title
       tab.state = {
         ...tab.state,
         running: false,
@@ -1213,6 +1658,7 @@ export function useDesk() {
     async (model: string) => {
       const tab = tabsRef.current.get(activeTabIdRef.current)
       if (!tab) return
+      tab.modelOverride = undefined
       const previous = tab.state.model
       tab.state = { ...tab.state, model }
       publish(tab)
@@ -1328,15 +1774,19 @@ export function useDesk() {
               globalShortcut: false,
               fontScale: 1,
               accent: 'coral' as const,
+              palette: 'claude' as const,
               compactMode: false,
               recentWorkspaces: [],
+              projectFolders: [],
+              workspaceFolderMap: {},
               chatSettings: {},
               lastChatSettings: {},
               hiddenSessions: []
             },
             permissionRules: { allow: [], ask: [], deny: [] },
             profiles: [],
-            customModels: []
+            customModels: [],
+            webSearch: EMPTY_WEB_SEARCH
           }
       settingsRef.current = nextSettings
       setSettings(nextSettings)
@@ -1366,7 +1816,8 @@ export function useDesk() {
             preferences,
             permissionRules: { allow: [], ask: [], deny: [] },
             profiles: [],
-            customModels: []
+            customModels: [],
+            webSearch: EMPTY_WEB_SEARCH
           }
       settingsRef.current = nextSettings
       setSettings(nextSettings)
@@ -1393,7 +1844,11 @@ export function useDesk() {
     const profiles = await window.desk.deleteApiProfile(id)
     const current = settingsRef.current
     if (current) {
-      const updated = { ...current, profiles }
+      const api =
+        current.api.profileId === id
+          ? { ...current.api, profileId: undefined }
+          : current.api
+      const updated = { ...current, api, profiles }
       settingsRef.current = updated
       setSettings(updated)
     }
@@ -1401,28 +1856,75 @@ export function useDesk() {
   }, [])
 
   const applyApiProfile = useCallback(
-    async (id: string) => {
-      const api = await window.desk.applyApiProfile(id)
+    async (id: string, restartActive = true) => {
+      const active = tabsRef.current.get(activeTabIdRef.current)
+      if (restartActive && active?.state.running) {
+        if (active) pushNotice(active, '请先停止当前任务再切换订阅', 'error')
+        throw new Error('Stop the current task before switching subscriptions.')
+      }
       const current = settingsRef.current
+      const profileName = current?.profiles.find((profile) => profile.id === id)?.name
+      const api = await window.desk.applyApiProfile(id)
       if (current) {
         const updated = { ...current, api }
         settingsRef.current = updated
         setSettings(updated)
       }
-      try {
-        const list = await window.desk.getModels()
-        modelsRef.current = list.length
-          ? list
-          : fallbackModelsFor(api.providerId || settingsRef.current?.api.providerId)
-        setModels(modelsRef.current)
-      } catch {
-        // keep
+      const nextModels = [...fallbackModelsFor(api.providerId)]
+      if (api.model && !nextModels.some((model) => model.id === api.model)) {
+        nextModels.push({ id: api.model, name: api.model })
       }
+      modelsRef.current = nextModels
+      setModels(nextModels)
+      // Model discovery can be slow; never make the subscription switch wait.
+      const switchTarget = api.profileId
+      void window.desk
+        .getModels()
+        .then((list) => {
+          if (list.length === 0) return
+          if (settingsRef.current?.api.profileId !== switchTarget) return
+          modelsRef.current = list
+          setModels(list)
+        })
+        .catch(() => undefined)
+      if (!restartActive) return api
+
       const tab = tabsRef.current.get(activeTabIdRef.current)
-      if (tab) pushNotice(tab, '已切换 API 配置，新会话生效')
+      if (!tab) return api
+      const nextModel = api.model || tab.state.model
+      const wasStarted = tab.started
+      await window.desk.stopSession(tab.id).catch(() => undefined)
+      tab.started = false
+      tab.modelOverride = nextModel
+      tab.state = { ...tab.state, model: nextModel, sessionId: tab.sessionId }
+      publish(tab)
+      void persistChatSettings(tab, { model: nextModel })
+      if (wasStarted) {
+        try {
+          const state = await window.desk.startSession(tab.id, {
+            cwd: tab.cwd,
+            model: nextModel,
+            permissionMode: tab.state.permissionMode,
+            effort: tab.effort,
+            resume: tab.sessionId
+          })
+          tab.started = true
+          tab.sessionId = state.sessionId || tab.sessionId
+          applyState(tab, state)
+          publish(tab)
+          pushNotice(tab, `已切换到订阅${profileName ? `「${profileName}」` : ''}`)
+        } catch (error) {
+          pushNotice(tab, `切换订阅后重启会话失败：${errorText(error)}`, 'error')
+        }
+      } else {
+        pushNotice(
+          tab,
+          `已切换到订阅${profileName ? `「${profileName}」` : ''}，新消息将使用新账号`
+        )
+      }
       return api
     },
-    [pushNotice]
+    [applyState, persistChatSettings, publish, pushNotice]
   )
 
   const saveCustomModel = useCallback(async (model: CustomModel): Promise<CustomModel[]> => {
@@ -1482,6 +1984,26 @@ export function useDesk() {
     []
   )
 
+  const saveWebSearch = useCallback(
+    async (patch: WebSearchPatch): Promise<WebSearchSettings> => {
+      const webSearch = await window.desk.saveWebSearchSettings(patch)
+      const current = settingsRef.current
+      if (current) {
+        const updated = { ...current, webSearch }
+        settingsRef.current = updated
+        setSettings(updated)
+      }
+      return webSearch
+    },
+    []
+  )
+
+  const testWebSearch = useCallback(
+    (patch?: WebSearchPatch): Promise<WebSearchTestResult> =>
+      window.desk.testWebSearch(patch),
+    []
+  )
+
   const testApi = useCallback(
     (patch?: ApiSettingsPatch): Promise<TestApiResult> => window.desk.testApi(patch),
     []
@@ -1512,7 +2034,12 @@ export function useDesk() {
     const next = (current.preferences.recentWorkspaces || []).filter(
       (item) => item !== path
     )
-    const preferences = await window.desk.savePreferences({ recentWorkspaces: next })
+    const nextMap = { ...(current.preferences.workspaceFolderMap || {}) }
+    delete nextMap[path]
+    const preferences = await window.desk.savePreferences({
+      recentWorkspaces: next,
+      workspaceFolderMap: nextMap
+    })
     const updated = { ...current, preferences }
     settingsRef.current = updated
     setSettings(updated)
@@ -1578,16 +2105,40 @@ export function useDesk() {
     return status
   }, [])
 
+  const stopTask = useCallback(
+    async (taskId: string): Promise<void> => {
+      const tab = tabsRef.current.get(activeTabIdRef.current)
+      if (!tab) return
+      try {
+        await window.desk.stopTask(tab.id, taskId)
+        const task = tab.tasks.find((item) => item.id === taskId)
+        if (task) {
+          task.status = 'stopped'
+          task.updatedAt = Date.now()
+          publish(tab)
+        }
+      } catch (error) {
+        pushNotice(tab, `停止任务失败：${errorText(error)}`, 'error')
+      }
+    },
+    [publish, pushNotice]
+  )
+
   return {
     booted,
+    bootError,
     defaults,
     settings,
     models,
     cwd,
     sessions,
+    sessionsHasMore,
+    sessionsLoadingMore,
+    loadMoreSessions,
     tabs,
     tabOrder,
     activeTabId,
+    remoteActivity,
     activeTab: tabs[activeTabId],
     currentPermission,
     theme,
@@ -1604,11 +2155,16 @@ export function useDesk() {
     openWorkspace,
     newChat,
     chooseFolder,
+    openProject,
+    relocateWorkspace,
+    pickProject,
     selectSession,
     sendMessage,
     stop,
+    stopTask,
     renameSession,
     forkSession,
+    copySession,
     pinSession,
     deleteSessionById,
     tagSessionById,
@@ -1631,6 +2187,8 @@ export function useDesk() {
     applyApiProfile,
     savePreferences,
     savePermissionRules,
+    saveWebSearch,
+    testWebSearch,
     saveCustomModel,
     deleteCustomModel,
     testApi,

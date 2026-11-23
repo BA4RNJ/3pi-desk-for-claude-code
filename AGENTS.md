@@ -77,8 +77,12 @@ The project path contains spaces. Always quote it in shell commands.
   Large but centralized — change cautiously.
 - `src/renderer/src/lib/messages.ts`: SDK event -> UI messages; merges assistant frames by API
   message id (thinking + tool_use may arrive separately).
-- `src/renderer/src/components/`: UI.
+- `src/renderer/src/components/`: UI. `HomeView`/`ProjectView` implement the project-directory
+  home and per-project chat list; `CopySessionDialog` copies/migrates chats.
 - `src/main/extensions.ts`: MCP/plugins/skills/hooks/agents and marketplace CLI integration.
+- `src/main/session-copy.ts`: fork-within-source + rewrite `cwd` + move for cross-workspace copy.
+- `src/main/web-search-client.ts` + `web-search-mcp.ts`: provider-agnostic `web_search` MCP tool;
+  `session.ts` registers it and disables native `WebSearch` for non-Anthropic providers.
 - `src/main/background.ts`: `claude --bg` sessions (workspace trust required).
 - `src/main/settings.ts`: `~/.claude/settings.json` + app preferences.
 - `src/renderer/src/i18n.ts`: Chinese -> English DOM translator (default English).
@@ -131,6 +135,12 @@ The project path contains spaces. Always quote it in shell commands.
 - `npm run typecheck`
 - `npx electron-vite build`
 - Test a provider change and a custom model in Settings → API (model list, test connection, save).
+- Test Settings → General → Web search: save, test, and confirm a chat can call `web_search`.
+- Test the project home: search projects, open a project, search chats, open a chat, and return home.
+- Test per-chat drafts: type in tab A, switch to tab B, type something else, and switch back.
+- Test the AI work timer while a turn is running.
+- Test copy and move to another workspace; the original transcript must remain on disk.
+- Test the khaki/monochrome/blue/green palettes and a custom accent; settings must be opaque.
 - Launch the **packaged** binary and send one real prompt (uses API credits) to verify the asar
   path fix.
 - Check Settings → General → Claude Code CLI: a system install or downloaded copy is detected, and

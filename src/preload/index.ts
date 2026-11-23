@@ -7,6 +7,7 @@ import type {
   AppDefaults,
   BackgroundSession,
   BackgroundStartResult,
+  Attachment,
   AttachmentPickResult,
   CustomModel,
   DeskApi,
@@ -17,6 +18,7 @@ import type {
   McpConfigSnapshot,
   PluginAction,
   PluginMarketplaceSnapshot,
+  McpLoginResult,
   McpServerEntry,
   ModelOption,
   PermissionMode,
@@ -25,6 +27,12 @@ import type {
   PreferencesPatch,
   RewindPreview,
   SendMessagePayload,
+  SessionCopyMode,
+  BackupEntry,
+  ContentSearchMatch,
+  WebSearchPatch,
+  WebSearchSettings,
+  WebSearchTestResult,
   SessionInfo,
   SessionMessage,
   SessionStartOptions,
@@ -38,9 +46,19 @@ import type {
   TestApiResult,
   VersionInfo,
   ContextUsage,
+  DeskTabInput,
   FileEntry,
   FileContent,
-  FileNode
+  FileNode,
+  GitDiffResult,
+  GitStatusSnapshot,
+  RemoteSettings,
+  RemoteSettingsPatch,
+  RemoteStatus,
+  RemoteTab,
+  UsageHistorySnapshot,
+  UsageTurnRecordInput,
+  WorkspaceRelocation
 } from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -76,10 +94,17 @@ const api: DeskApi = {
     ipcRenderer.invoke('session:mcpStatus', tabId),
   toggleMcp: (tabId: string, name: string, enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('session:toggleMcp', tabId, name, enabled),
-  listSessions: (cwd: string): Promise<SessionInfo[]> =>
-    ipcRenderer.invoke('sessions:list', cwd),
-  listAllSessions: (limit = 200): Promise<SessionInfo[]> =>
-    ipcRenderer.invoke('sessions:all', limit),
+  reconnectMcp: (tabId: string, name: string): Promise<void> =>
+    ipcRenderer.invoke('session:reconnectMcp', tabId, name),
+  loginMcp: (tabId: string, name: string): Promise<McpLoginResult> =>
+    ipcRenderer.invoke('session:loginMcp', tabId, name),
+  cancelMcpLogin: (): Promise<void> => ipcRenderer.invoke('session:cancelMcpLogin'),
+  stopTask: (tabId: string, taskId: string): Promise<void> =>
+    ipcRenderer.invoke('session:stopTask', tabId, taskId),
+  listSessions: (cwd: string, offset = 0, limit = 60): Promise<SessionInfo[]> =>
+    ipcRenderer.invoke('sessions:list', cwd, offset, limit),
+  listAllSessions: (limit = 200, offset = 0): Promise<SessionInfo[]> =>
+    ipcRenderer.invoke('sessions:all', limit, offset),
   getSessionMessages: (sessionId: string, cwd: string): Promise<SessionMessage[]> =>
     ipcRenderer.invoke('sessions:messages', sessionId, cwd),
   renameSession: (sessionId: string, title: string, cwd: string): Promise<void> =>
@@ -93,10 +118,21 @@ const api: DeskApi = {
     cwd: string,
     upToMessageId?: string
   ): Promise<string> => ipcRenderer.invoke('sessions:fork', sessionId, cwd, upToMessageId),
+  copySession: (
+    sessionId: string,
+    sourceCwd: string,
+    targetCwd: string,
+    mode: SessionCopyMode
+  ): Promise<string> =>
+    ipcRenderer.invoke('sessions:copy', sessionId, sourceCwd, targetCwd, mode),
   saveExport: (defaultName: string, content: string): Promise<string | null> =>
     ipcRenderer.invoke('files:export', defaultName, content),
   pickDirectory: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickDirectory', defaultPath),
+  workspaceExists: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke('workspace:exists', path),
+  relocateWorkspace: (oldCwd: string, newCwd: string): Promise<WorkspaceRelocation> =>
+    ipcRenderer.invoke('workspace:relocate', oldCwd, newCwd),
   pickFiles: (): Promise<AttachmentPickResult> => ipcRenderer.invoke('files:pick'),
   getDefaults: (): Promise<AppDefaults> => ipcRenderer.invoke('defaults:get'),
   saveCwd: (cwd: string): Promise<void> => ipcRenderer.invoke('cwd:save', cwd),
@@ -117,6 +153,12 @@ const api: DeskApi = {
     ipcRenderer.invoke('settings:saveCustomModel', model),
   deleteCustomModel: (id: string, providerId?: string): Promise<CustomModel[]> =>
     ipcRenderer.invoke('settings:deleteCustomModel', id, providerId),
+  getWebSearchSettings: (): Promise<WebSearchSettings> =>
+    ipcRenderer.invoke('settings:webSearch'),
+  saveWebSearchSettings: (patch: WebSearchPatch): Promise<WebSearchSettings> =>
+    ipcRenderer.invoke('settings:saveWebSearch', patch),
+  testWebSearch: (patch?: WebSearchPatch): Promise<WebSearchTestResult> =>
+    ipcRenderer.invoke('settings:testWebSearch', patch),
   listBackgroundSessions: (): Promise<BackgroundSession[]> =>
     ipcRenderer.invoke('background:list'),
   startBackgroundSession: (
@@ -140,12 +182,33 @@ const api: DeskApi = {
     ipcRenderer.invoke('models:test', patch),
   searchFiles: (cwd: string, query: string): Promise<FileEntry[]> =>
     ipcRenderer.invoke('files:search', cwd, query),
+  searchContent: (cwd: string, query: string, limit?: number): Promise<ContentSearchMatch[]> =>
+    ipcRenderer.invoke('files:searchContent', cwd, query, limit),
   fileTree: (cwd: string): Promise<FileNode[]> =>
     ipcRenderer.invoke('files:tree', cwd),
   readFile: (cwd: string, path: string): Promise<FileContent> =>
     ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (cwd: string, path: string, text: string): Promise<void> =>
     ipcRenderer.invoke('files:write', cwd, path, text),
+  listBackups: (): Promise<BackupEntry[]> => ipcRenderer.invoke('backups:list'),
+  readBackup: (name: string, maxBytes?: number): Promise<string> =>
+    ipcRenderer.invoke('backups:read', name, maxBytes),
+  exportBackup: (name: string): Promise<string | null> =>
+    ipcRenderer.invoke('backups:export', name),
+  exportDiagnostics: (): Promise<string | null> =>
+    ipcRenderer.invoke('diagnostics:export'),
+  gitStatus: (cwd: string): Promise<GitStatusSnapshot> =>
+    ipcRenderer.invoke('git:status', cwd),
+  gitDiff: (cwd: string, filePath?: string): Promise<GitDiffResult> =>
+    ipcRenderer.invoke('git:diff', cwd, filePath),
+  getUsageHistory: (): Promise<UsageHistorySnapshot> =>
+    ipcRenderer.invoke('usage:history'),
+  recordUsageTurn: (record: UsageTurnRecordInput): Promise<UsageHistorySnapshot> =>
+    ipcRenderer.invoke('usage:recordTurn', record),
+  clearUsageHistory: (): Promise<UsageHistorySnapshot> =>
+    ipcRenderer.invoke('usage:clearHistory'),
+  createRemotePairingToken: (): Promise<{ code: string; expiresAt: number }> =>
+    ipcRenderer.invoke('remote:pairToken'),
   listExtensions: (cwd: string, tabId?: string): Promise<ExtensionsSnapshot> =>
     ipcRenderer.invoke('extensions:list', cwd, tabId),
   readMcpConfig: (
@@ -222,6 +285,39 @@ const api: DeskApi = {
     ipcRenderer.invoke('claudeCli:setPath', path),
   pickClaudeCli: (): Promise<ClaudeCliStatus | null> =>
     ipcRenderer.invoke('claudeCli:pick'),
+  listTabs: (): Promise<RemoteTab[]> => ipcRenderer.invoke('tabs:list'),
+  createTab: (tab: DeskTabInput): Promise<RemoteTab> =>
+    ipcRenderer.invoke('tabs:create', tab),
+  closeTab: (tabId: string): Promise<void> => ipcRenderer.invoke('tabs:close', tabId),
+  renameTab: (tabId: string, title: string): Promise<RemoteTab | null> =>
+    ipcRenderer.invoke('tabs:rename', tabId, title),
+  snapshotTab: (tabId: string): Promise<RemoteTab | null> =>
+    ipcRenderer.invoke('tabs:snapshot', tabId),
+  onTabsChanged: (callback: (payload: { tabs: RemoteTab[] }) => void) =>
+    subscribe('tabs:changed', callback),
+  onUserMessage: (
+    callback: (payload: {
+      tabId: string
+      source?: 'electron' | 'remote'
+      message: { uuid: string; text: string; attachments?: Attachment[]; ts: number }
+    }) => void
+  ) => subscribe('desk:user-message', callback),
+  onSettingsChanged: (callback: (payload: SettingsSnapshot) => void) =>
+    subscribe('settings:changed', callback),
+  onSessionsChanged: (callback: (payload: { cwd?: string }) => void) =>
+    subscribe('sessions:changed', callback),
+  getRemoteSettings: (): Promise<RemoteSettings> => ipcRenderer.invoke('remote:get'),
+  saveRemoteSettings: (patch: RemoteSettingsPatch): Promise<RemoteSettings> =>
+    ipcRenderer.invoke('remote:save', patch),
+  getRemoteStatus: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:status'),
+  startTunnel: (
+    mode: 'quick' | 'named',
+    options?: { name?: string; configPath?: string; hostname?: string }
+  ): Promise<RemoteStatus> => ipcRenderer.invoke('remote:startTunnel', mode, options),
+  stopTunnel: (): Promise<RemoteStatus> => ipcRenderer.invoke('remote:stopTunnel'),
+  downloadCloudflared: (): Promise<RemoteStatus> =>
+    ipcRenderer.invoke('remote:downloadCloudflared'),
+  getDiagnosticsText: (): Promise<string> => ipcRenderer.invoke('diagnostics:text'),
   onClaudeCliStatus: (callback: (payload: ClaudeCliStatus) => void) =>
     subscribe('claude-cli:status', callback),
   onEvent: (callback: (payload: TabEventPayload) => void) =>

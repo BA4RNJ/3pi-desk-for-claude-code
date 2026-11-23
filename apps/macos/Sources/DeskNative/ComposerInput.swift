@@ -8,6 +8,9 @@ struct NativeComposerInput: NSViewRepresentable {
   let submit: () -> Void
   let files: ([String]) -> Void
   let image: (Data) -> Void
+  var navigateMenu: ((Int) -> Bool)? = nil
+  var acceptMenu: (() -> Bool)? = nil
+  var dismissMenu: (() -> Bool)? = nil
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeNSView(context: Context) -> NSScrollView {
     let scroll = NSScrollView()
@@ -29,6 +32,9 @@ struct NativeComposerInput: NSViewRepresentable {
     editor.submit = submit
     editor.files = files
     editor.image = image
+    editor.navigateMenu = navigateMenu
+    editor.acceptMenu = acceptMenu
+    editor.dismissMenu = dismissMenu
     scroll.documentView = editor
     return scroll
   }
@@ -47,6 +53,9 @@ struct NativeComposerInput: NSViewRepresentable {
     editor.submit = submit
     editor.files = files
     editor.image = image
+    editor.navigateMenu = navigateMenu
+    editor.acceptMenu = acceptMenu
+    editor.dismissMenu = dismissMenu
     let coordinator = context.coordinator
     DispatchQueue.main.async { coordinator.measure(editor, in: scroll) }
   }
@@ -75,13 +84,21 @@ private final class ComposerTextView: NSTextView {
   var submit: (() -> Void)?
   var files: (([String]) -> Void)?
   var image: ((Data) -> Void)?
+  var navigateMenu: ((Int) -> Bool)?
+  var acceptMenu: (() -> Bool)?
+  var dismissMenu: (() -> Bool)?
   override func keyDown(with event: NSEvent) {
     guard isEditable else { return }
-    if (event.keyCode == 36 || event.keyCode == 76) && !event.modifierFlags.contains(.shift)
-      && !hasMarkedText()
-    {
-      submit?()
-      return
+    if !hasMarkedText() {
+      if event.keyCode == 125, navigateMenu?(1) == true { return }
+      if event.keyCode == 126, navigateMenu?(-1) == true { return }
+      if event.keyCode == 48, acceptMenu?() == true { return }
+      if event.keyCode == 53, dismissMenu?() == true { return }
+      if (event.keyCode == 36 || event.keyCode == 76) && !event.modifierFlags.contains(.shift) {
+        if acceptMenu?() == true { return }
+        submit?()
+        return
+      }
     }
     super.keyDown(with: event)
   }
