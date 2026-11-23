@@ -96,5 +96,8 @@
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
+  },
+  "overrides": {
+    "@hono/node-server": "^2.1.11"
   }
 }
