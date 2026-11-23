@@ -6,15 +6,16 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  session,
   shell,
   Tray,
   type MenuItemConstructorOptions
 } from 'electron'
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   deleteSession,
   forkSession,
@@ -26,24 +27,44 @@ import {
 import { SessionManager, type StartOptions } from './session'
 import {
   buildExtraArgs,
+  clearUsageHistory,
   defaultCwd,
   applyApiProfile,
   deleteApiProfile,
   deleteCustomModel,
   getApiSettings,
   getPreferences,
+  getRemoteCredentials,
+  getRemoteSettings,
   getSettingsSnapshot,
+  getStoredRemoteSettings,
+  getUsageHistory,
+  getWebSearchConfig,
+  getWebSearchSettings,
+  recordUsageTurn,
   saveApiProfile,
   saveApiSettings,
   saveCwd,
   saveCustomModel,
   savePermissionRules,
-  savePreferences
+  savePreferences,
+  saveRemoteSettings,
+  saveWebSearchSettings,
+  setRemoteCredentials
 } from './settings'
+import { DeskHub, type HubClient } from './desk-hub'
+import { RemoteServer } from './remote-server'
+import { RemoteAuth } from './remote-auth'
+import { TunnelManager } from './tunnel'
 import { providerConsoleUrl } from '../shared/providers'
 import { isWslEnvironment } from '../shared/environment'
 import { ensureMacPath } from './shell-path'
-import { findModelContextWindow, getModels, testApi } from './models'
+import {
+  findModelContextWindow,
+  getCachedModelContextWindow,
+  getModels,
+  testApi
+} from './models'
 import { versionInfo } from './version'
 import {
   downloadClaudeCli,
@@ -66,6 +87,13 @@ import {
   searchFiles,
   writeFileContent
 } from './files'
+import { searchContent } from './content-search'
+import { getGitDiff, getGitStatus } from './git'
+import { copySessionToWorkspace, relocateProjectTranscripts } from './session-copy'
+import { copyBackup, listBackups, readBackup } from './backups'
+import { buildDiagnosticsText, installDiagnostics, logDiagnostic } from './diagnostics'
+import { testWebSearch } from './web-search-client'
+import { cancelMcpLogin, loginMcpServer } from './mcp-auth'
 import {
   cancelPluginAction,
   createExtensionFile,
@@ -88,16 +116,22 @@ import {
 import type {
   ApiSettingsPatch,
   AppDefaults,
+  ClaudeCliStatus,
   CustomModel,
+  DeskTabInput,
   DesktopEvent,
   EffortSetting,
   PermissionMode,
   PermissionResponsePayload,
   PreferencesPatch,
+  RemoteSettings,
+  RemoteSettingsPatch,
+  RemoteStatus,
   SendMessagePayload,
   SessionInfo,
   SessionStartOptions,
-  SessionState
+  SessionState,
+  WorkspaceRelocation
 } from '../shared/types'
 
 // Ubuntu's sandbox/GPU stack can crash Electron. macOS handles GPU
@@ -151,11 +185,58 @@ let tray: Tray | null = null
 let trayAvailable = false
 let quitting = false
 const managers = new Map<string, SessionManager>()
+let lastCliStatus: ClaudeCliStatus | null = null
+let remoteServer: RemoteServer | null = null
+let tunnelManager: TunnelManager | null = null
+const remoteAuth = new RemoteAuth(getRemoteCredentials)
+
+/**
+ * Capture every `ipcMain.handle` listener so the remote web client can call
+ * the exact same service code as the desktop preload. The listener receives a
+ * dummy event object; handlers in this file ignore `_event`.
+ */
+const ipcHandlers = new Map<string, (...args: any[]) => any>()
+const originalIpcHandle = ipcMain.handle.bind(ipcMain)
+ipcMain.handle = ((channel: string, listener: (...args: any[]) => any) => {
+  ipcHandlers.set(channel, listener)
+  return originalIpcHandle(channel, listener)
+}) as typeof ipcMain.handle
+
+export async function invokeIpc(channel: string, args: unknown[]): Promise<unknown> {
+  const handler = ipcHandlers.get(channel)
+  if (!handler) throw new Error(`Unknown method: ${channel}`)
+  return await handler(undefined, ...args)
+}
+
+const hub = new DeskHub({
+  invoke: (method, args) => invokeIpc(method, args),
+  hasSession: (tabId) => managers.has(tabId),
+  getSessionState: (tabId) => managers.get(tabId)?.getState(),
+  getDefaults: () => appDefaults(),
+  getSettings: () => getSettingsSnapshot(),
+  getRemoteStatus: () =>
+    remoteServer?.getStatus() || { running: false, lanUrls: [], clients: 0 },
+  getClaudeCliStatus: () => lastCliStatus,
+  sendMessage: async (tabId, payload) => {
+    const manager = managerFor(tabId)
+    if (!manager) throw new Error('Chat has not started.')
+    await manager.send(payload)
+  },
+  respondPermission: (tabId, response) => {
+    managerFor(tabId)?.respondPermission(
+      response.id,
+      response.decision,
+      response.always,
+      response.message,
+      response.answers
+    )
+  },
+  isPathAllowed: (path) => remotePathAllowed(path),
+  log: (line) => logDiagnostic(line)
+})
 
 function send(channel: string, payload: unknown): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, payload)
-  }
+  hub.broadcast(channel, payload)
 }
 
 /**
@@ -273,15 +354,57 @@ async function findSessionTranscript(sessionId: string): Promise<string | null> 
   return null
 }
 
+type ListedSession = Awaited<ReturnType<typeof listSessions>>[number]
+
+function toSessionInfo(session: ListedSession): SessionInfo {
+  return {
+    sessionId: session.sessionId,
+    summary: session.summary,
+    lastModified: session.lastModified,
+    firstPrompt: session.firstPrompt,
+    cwd: session.cwd,
+    gitBranch: session.gitBranch,
+    customTitle: session.customTitle,
+    tag: (session as { tag?: string }).tag,
+    fileSize: session.fileSize
+  }
+}
+
+function installContentSecurityPolicy(): void {
+  if (!app.isPackaged) return
+  const policy = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https: http:",
+    "font-src 'self' data:",
+    "connect-src 'self' https: http: ws: wss:",
+    "media-src 'self' data: blob: https: http:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-src 'none'",
+    "form-action 'none'"
+  ].join('; ')
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [policy]
+      }
+    })
+  })
+}
+
 function createManager(tabId: string): SessionManager {
   return new SessionManager({
-    emitEvent: (message: DesktopEvent) => send('session:event', { tabId, message }),
-    emitState: (state: SessionState) => send('session:state', { tabId, state }),
+    emitEvent: (message: DesktopEvent) => hub.onSessionEvent(tabId, message),
+    emitState: (state: SessionState) => hub.onSessionState(tabId, state),
     emitPermission: (request) => {
-      send('permission:request', { tabId, request })
+      hub.onPermission(tabId, request)
       if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true)
     },
-    emitPermissionCancel: (id) => send('permission:cancel', { tabId, id }),
+    emitPermissionCancel: (id) => hub.onPermissionCancel(tabId, id),
     onResult: () => {
       // Notifications are shown from the renderer so they can include the tab title.
       // WSLg has no notification daemon; flashing the Windows taskbar is the
@@ -295,6 +418,17 @@ function createManager(tabId: string): SessionManager {
 
 function managerFor(tabId: string): SessionManager | undefined {
   return managers.get(tabId)
+}
+
+/**
+ * Model discovery can hit a slow provider endpoint. Never let it delay the
+ * first turn: fall back to the SDK default context window after a short wait.
+ */
+async function findModelContextWindowFast(model?: string): Promise<number | undefined> {
+  return await Promise.race([
+    findModelContextWindow(model).catch(() => undefined),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1500))
+  ])
 }
 
 function appDefaults(): AppDefaults {
@@ -326,6 +460,18 @@ function createWindow(): void {
       spellcheck: false
     }
   })
+
+  const windowClient: HubClient = {
+    id: `electron-${mainWindow.id}`,
+    kind: 'electron',
+    send: (channel, payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload)
+      }
+    }
+  }
+  hub.registerClient(windowClient)
+  mainWindow.on('closed', () => hub.unregisterClient(windowClient))
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('focus', () => mainWindow?.flashFrame(false))
@@ -362,11 +508,8 @@ function createWindow(): void {
 
 function registerIpc(): void {
   subscribeClaudeCliStatus((status) => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
-        window.webContents.send('claude-cli:status', status)
-      }
-    }
+    lastCliStatus = status
+    hub.broadcast('claude-cli:status', status)
   })
 
   ipcMain.handle('defaults:get', () => appDefaults())
@@ -385,6 +528,14 @@ function registerIpc(): void {
         managers.set(tabId, manager)
       }
       const preferences = getPreferences()
+      const startedAt = Date.now()
+      // Never block the first turn on model-catalog I/O. Use the synchronous
+      // cache when it is warm; otherwise start the SDK with its default
+      // context window and refresh the catalog in the background.
+      const contextWindow = getCachedModelContextWindow(options.model)
+      if (contextWindow === undefined) {
+        void findModelContextWindow(options.model).catch(() => undefined)
+      }
       const startOptions: StartOptions = {
         ...options,
         extraArgs: buildExtraArgs(preferences),
@@ -392,9 +543,18 @@ function registerIpc(): void {
         additionalDirectories: preferences.additionalDirectories,
         allowedTools: preferences.allowedTools,
         disallowedTools: preferences.disallowedTools,
-        contextWindow: await findModelContextWindow(options.model)
+        contextWindow,
+        apiProviderId: getApiSettings().providerId,
+        webSearch: getWebSearchConfig()
       }
-      return manager.start(startOptions)
+      const state = await manager.start(startOptions)
+      const totalMs = Date.now() - startedAt
+      if (totalMs > 2000) {
+        logDiagnostic(
+          `timing: session:start total=${totalMs}ms model=${options.model || 'default'}`
+        )
+      }
+      return state
     }
   )
 
@@ -408,9 +568,7 @@ function registerIpc(): void {
   ipcMain.handle(
     'session:send',
     async (_event, tabId: string, payload: SendMessagePayload) => {
-      const manager = managerFor(tabId)
-      if (!manager) throw new Error('Chat has not started.')
-      await manager.send(payload)
+      await hub.sendMessage(tabId, payload)
     }
   )
 
@@ -431,7 +589,7 @@ function registerIpc(): void {
   ipcMain.handle('session:setModel', async (_event, tabId: string, model: string) => {
     const manager = managerFor(tabId)
     if (!manager) throw new Error('Chat has not started.')
-    await manager.setModel(model, await findModelContextWindow(model))
+    await manager.setModel(model, await findModelContextWindowFast(model))
   })
 
   ipcMain.handle(
@@ -455,13 +613,7 @@ function registerIpc(): void {
   ipcMain.handle(
     'permission:respond',
     (_event, tabId: string, response: PermissionResponsePayload) => {
-      managerFor(tabId)?.respondPermission(
-        response.id,
-        response.decision,
-        response.always,
-        response.message,
-        response.answers
-      )
+      hub.respondPermission(tabId, response)
     }
   )
 
@@ -503,35 +655,65 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('sessions:list', async (_event, cwd: string): Promise<SessionInfo[]> => {
-    const sessions = await listSessions({ dir: cwd, limit: 60, includeWorktrees: true })
-    return sessions.map((session) => ({
-      sessionId: session.sessionId,
-      summary: session.summary,
-      lastModified: session.lastModified,
-      firstPrompt: session.firstPrompt,
-      cwd: session.cwd,
-      gitBranch: session.gitBranch,
-      customTitle: session.customTitle,
-      tag: (session as { tag?: string }).tag,
-      fileSize: session.fileSize
-    }))
-  })
+  ipcMain.handle(
+    'session:reconnectMcp',
+    async (_event, tabId: string, name: string) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.reconnectMcp(name)
+    }
+  )
 
-  ipcMain.handle('sessions:all', async (_event, limit = 200) => {
-    const sessions = await listSessions({ limit, includeWorktrees: true })
-    return sessions.map((session) => ({
-      sessionId: session.sessionId,
-      summary: session.summary,
-      lastModified: session.lastModified,
-      firstPrompt: session.firstPrompt,
-      cwd: session.cwd,
-      gitBranch: session.gitBranch,
-      customTitle: session.customTitle,
-      tag: (session as { tag?: string }).tag,
-      fileSize: session.fileSize
-    }))
-  })
+  ipcMain.handle(
+    'session:loginMcp',
+    async (_event, tabId: string, name: string) => {
+      const manager = managerFor(tabId)
+      const cwd = manager?.getState().cwd || defaultCwd()
+      return loginMcpServer(name, {
+        cwd,
+        openUrl: (url) => void openExternalUrl(url),
+        onOutput: (text) => {
+          if (text.trim()) logDiagnostic(`mcp login ${name}: ${text.trim()}`)
+        }
+      })
+    }
+  )
+
+  ipcMain.handle('session:cancelMcpLogin', () => cancelMcpLogin())
+
+  ipcMain.handle(
+    'session:stopTask',
+    async (_event, tabId: string, taskId: string) => {
+      const manager = managerFor(tabId)
+      if (!manager) throw new Error('Chat has not started.')
+      await manager.stopTask(taskId)
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:list',
+    async (_event, cwd: string, offset = 0, limit = 60): Promise<SessionInfo[]> => {
+      const sessions = await listSessions({
+        dir: cwd,
+        offset: Math.max(0, offset),
+        limit: Math.max(1, limit),
+        includeWorktrees: true
+      })
+      return sessions.map(toSessionInfo)
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:all',
+    async (_event, limit = 200, offset = 0): Promise<SessionInfo[]> => {
+      const sessions = await listSessions({
+        offset: Math.max(0, offset),
+        limit: Math.max(1, limit),
+        includeWorktrees: true
+      })
+      return sessions.map(toSessionInfo)
+    }
+  )
 
   ipcMain.handle('sessions:messages', async (_event, sessionId: string, cwd: string) => {
     return getSessionMessages(sessionId, { dir: cwd })
@@ -541,6 +723,7 @@ function registerIpc(): void {
     'sessions:rename',
     async (_event, sessionId: string, title: string, cwd: string) => {
       await renameSession(sessionId, title, { dir: cwd })
+      broadcastSessionsChanged(cwd)
     }
   )
 
@@ -557,6 +740,7 @@ function registerIpc(): void {
       const backupPath = join(backupDir, `${stamp}-${sessionId}.jsonl`)
       await copyFile(source, backupPath)
       await deleteSession(sessionId, { dir: cwd })
+      broadcastSessionsChanged(cwd)
       return backupPath
     }
   )
@@ -565,6 +749,7 @@ function registerIpc(): void {
     'sessions:tag',
     async (_event, sessionId: string, tag: string | null, cwd: string) => {
       await tagSession(sessionId, tag, { dir: cwd })
+      broadcastSessionsChanged(cwd)
     }
   )
 
@@ -575,7 +760,26 @@ function registerIpc(): void {
         dir: cwd,
         upToMessageId
       })
+      broadcastSessionsChanged(cwd)
       return result.sessionId
+    }
+  )
+
+  ipcMain.handle(
+    'sessions:copy',
+    async (
+      _event,
+      sessionId: string,
+      sourceCwd: string,
+      targetCwd: string,
+      _mode: import('../shared/types').SessionCopyMode
+    ) => {
+      if (!sourceCwd.trim() || !targetCwd.trim()) {
+        throw new Error('源工作区和目标工作区不能为空。')
+      }
+      const result = await copySessionToWorkspace(sessionId, sourceCwd, targetCwd)
+      broadcastSessionsChanged(targetCwd)
+      return result
     }
   )
 
@@ -606,9 +810,56 @@ function registerIpc(): void {
     }
   )
 
+  ipcMain.handle('workspace:exists', async (_event, path: string): Promise<boolean> => {
+    if (!path) return false
+    try {
+      return (await stat(path)).isDirectory()
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle(
+    'workspace:relocate',
+    async (_event, oldCwd: string, newCwd: string): Promise<WorkspaceRelocation> => {
+      if (!oldCwd?.trim() || !newCwd?.trim()) {
+        throw new Error('源文件夹和目标文件夹不能为空。')
+      }
+      if (oldCwd === newCwd) {
+        throw new Error('目标文件夹与当前文件夹相同。')
+      }
+      const target = await stat(newCwd).catch(() => null)
+      if (!target?.isDirectory()) {
+        throw new Error('目标文件夹不存在或不是目录。')
+      }
+
+      const relocated = await relocateProjectTranscripts(oldCwd, newCwd)
+      const currentPrefs = getPreferences()
+      const list = currentPrefs.recentWorkspaces || []
+      const next = [newCwd, ...list.map((item) => (item === oldCwd ? newCwd : item))]
+        .filter((item, index, items) => items.indexOf(item) === index)
+        .slice(0, 200)
+      const folderMap = { ...(currentPrefs.workspaceFolderMap || {}) }
+      if (folderMap[oldCwd]) {
+        folderMap[newCwd] = folderMap[oldCwd]
+        delete folderMap[oldCwd]
+      }
+      const preferences = savePreferences({
+        recentWorkspaces: next,
+        workspaceFolderMap: folderMap
+      })
+      return { ...relocated, preferences }
+    }
+  )
+
   ipcMain.handle('files:pick', async () => pickAttachmentFiles())
   ipcMain.handle('files:search', async (_event, cwd: string, query: string) =>
     searchFiles(cwd, query)
+  )
+  ipcMain.handle(
+    'files:searchContent',
+    async (_event, cwd: string, query: string, limit?: number) =>
+      searchContent(cwd, query, { limit })
   )
   ipcMain.handle('files:tree', async (_event, cwd: string) => fileTree(cwd))
   ipcMain.handle('files:read', async (_event, cwd: string, path: string) =>
@@ -617,34 +868,115 @@ function registerIpc(): void {
   ipcMain.handle('files:write', async (_event, cwd: string, path: string, text: string) => {
     await writeFileContent(cwd, path, text)
   })
+  ipcMain.handle('git:status', async (_event, cwd: string) => getGitStatus(cwd))
+  ipcMain.handle('git:diff', async (_event, cwd: string, filePath?: string) =>
+    getGitDiff(cwd, filePath)
+  )
+  ipcMain.handle('usage:history', () => getUsageHistory())
+  ipcMain.handle(
+    'usage:recordTurn',
+    (_event, record: import('../shared/types').UsageTurnRecordInput) =>
+      recordUsageTurn(record)
+  )
+  ipcMain.handle('usage:clearHistory', () => clearUsageHistory())
+
+  ipcMain.handle('backups:list', () =>
+    listBackups(join(app.getPath('userData'), 'session-backups'))
+  )
+  ipcMain.handle('backups:read', async (_event, name: string, maxBytes?: number) =>
+    readBackup(join(app.getPath('userData'), 'session-backups'), name, maxBytes)
+  )
+  ipcMain.handle('backups:export', async (_event, name: string): Promise<string | null> => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export session backup',
+      defaultPath: join(defaultCwd(), name),
+      filters: [{ name: 'Session transcript', extensions: ['jsonl'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    await copyBackup(join(app.getPath('userData'), 'session-backups'), name, result.filePath)
+    return result.filePath
+  })
+  ipcMain.handle('diagnostics:export', async (): Promise<string | null> => {
+    const text = await buildDiagnosticsText()
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export diagnostics',
+      defaultPath: join(defaultCwd(), `3pi-desk-diagnostics-${Date.now()}.txt`),
+      filters: [{ name: 'Text', extensions: ['txt'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    await writeFile(result.filePath, text, 'utf8')
+    return result.filePath
+  })
 
   ipcMain.handle('settings:get', () => getSettingsSnapshot())
-  ipcMain.handle('settings:saveApi', (_event, patch: ApiSettingsPatch) =>
-    saveApiSettings(patch)
-  )
-  ipcMain.handle('settings:saveApiProfile', (_event, profile: import('../shared/types').ApiProfileInput) =>
-    saveApiProfile(profile)
-  )
-  ipcMain.handle('settings:deleteApiProfile', (_event, id: string) =>
-    deleteApiProfile(id)
-  )
-  ipcMain.handle('settings:applyApiProfile', (_event, id: string) =>
-    applyApiProfile(id)
-  )
+  ipcMain.handle('settings:saveApi', (_event, patch: ApiSettingsPatch) => {
+    const result = saveApiSettings(patch)
+    broadcastSettingsChanged()
+    return result
+  })
+  ipcMain.handle('settings:saveApiProfile', (_event, profile: import('../shared/types').ApiProfileInput) => {
+    const result = saveApiProfile(profile)
+    broadcastSettingsChanged()
+    return result
+  })
+  ipcMain.handle('settings:deleteApiProfile', (_event, id: string) => {
+    const result = deleteApiProfile(id)
+    broadcastSettingsChanged()
+    return result
+  })
+  ipcMain.handle('settings:applyApiProfile', (_event, id: string) => {
+    const result = applyApiProfile(id)
+    broadcastSettingsChanged()
+    return result
+  })
   ipcMain.handle('settings:savePreferences', (_event, patch: PreferencesPatch) => {
     const preferences = savePreferences(patch)
     syncGlobalShortcut(preferences.globalShortcut)
+    broadcastSettingsChanged()
     return preferences
   })
-  ipcMain.handle('settings:savePermissionRules', (_event, rules: import('../shared/types').PermissionRules) =>
-    savePermissionRules(rules)
-  )
-  ipcMain.handle('settings:saveCustomModel', (_event, model: CustomModel) =>
-    saveCustomModel(model)
-  )
+  ipcMain.handle('settings:savePermissionRules', (_event, rules: import('../shared/types').PermissionRules) => {
+    const result = savePermissionRules(rules)
+    broadcastSettingsChanged()
+    return result
+  })
+  ipcMain.handle('settings:saveCustomModel', (_event, model: CustomModel) => {
+    const result = saveCustomModel(model)
+    broadcastSettingsChanged()
+    return result
+  })
   ipcMain.handle(
     'settings:deleteCustomModel',
-    (_event, id: string, providerId?: string) => deleteCustomModel(id, providerId)
+    (_event, id: string, providerId?: string) => {
+      const result = deleteCustomModel(id, providerId)
+      broadcastSettingsChanged()
+      return result
+    }
+  )
+  ipcMain.handle('settings:webSearch', () => getWebSearchSettings())
+  ipcMain.handle(
+    'settings:saveWebSearch',
+    (_event, patch: import('../shared/types').WebSearchPatch) => {
+      const result = saveWebSearchSettings(patch)
+      broadcastSettingsChanged()
+      return result
+    }
+  )
+  ipcMain.handle(
+    'settings:testWebSearch',
+    async (_event, patch?: import('../shared/types').WebSearchPatch) => {
+      const current = getWebSearchConfig()
+      const merged = {
+        ...current,
+        ...(patch?.provider !== undefined ? { provider: patch.provider } : {}),
+        ...(patch?.endpoint !== undefined ? { endpoint: patch.endpoint } : {}),
+        ...(patch?.apiKey !== undefined
+          ? { apiKey: patch.apiKey === null ? '' : patch.apiKey }
+          : {}),
+        ...(patch?.maxResults !== undefined ? { maxResults: patch.maxResults } : {})
+      }
+      return testWebSearch('Claude Code', merged)
+    }
   )
 
   ipcMain.handle('app:versionInfo', () => versionInfo())
@@ -781,6 +1113,57 @@ function registerIpc(): void {
       saveHooksConfig(scope, cwd, text)
   )
 
+  ipcMain.handle('tabs:list', () => hub.listTabs())
+  ipcMain.handle('tabs:create', (_event, tab: DeskTabInput) => hub.createTab(tab))
+  ipcMain.handle('tabs:close', async (_event, tabId: string) => hub.closeTab(tabId))
+  ipcMain.handle('tabs:rename', (_event, tabId: string, title: string) =>
+    hub.renameTab(tabId, title)
+  )
+  ipcMain.handle('tabs:snapshot', (_event, tabId: string) => hub.snapshotTab(tabId))
+
+  ipcMain.handle('diagnostics:text', () => buildDiagnosticsText())
+  ipcMain.handle('remote:get', () => remoteSettingsView())
+  ipcMain.handle('remote:save', async (_event, patch: RemoteSettingsPatch) => {
+    saveRemoteSettings(patch)
+    await applyRemoteSettings()
+    return remoteSettingsView()
+  })
+  ipcMain.handle('remote:status', () => remoteStatusView())
+  ipcMain.handle('remote:setCredentials', async (_event, username: string, password: string) => {
+    setRemoteCredentials(username, password)
+    return remoteSettingsView()
+  })
+  ipcMain.handle('remote:pairToken', () => remoteAuth.createPairingToken())
+  ipcMain.handle(
+    'remote:startTunnel',
+    async (
+      _event,
+      mode: 'quick' | 'named',
+      options?: { name?: string; configPath?: string; hostname?: string }
+    ) => {
+      ensureTunnelManager()
+      const remote = getStoredRemoteSettings()
+      if (mode === 'named') {
+        await tunnelManager?.startNamed(options?.name || '', {
+          configPath: options?.configPath,
+          hostname: options?.hostname
+        })
+      } else {
+        await tunnelManager?.startQuick(remote.port)
+      }
+      return remoteStatusView()
+    }
+  )
+  ipcMain.handle('remote:stopTunnel', async () => {
+    await tunnelManager?.stop()
+    return remoteStatusView()
+  })
+  ipcMain.handle('remote:downloadCloudflared', async () => {
+    ensureTunnelManager()
+    await tunnelManager?.download()
+    return remoteStatusView()
+  })
+
   ipcMain.handle('open:path', async (_event, path: string) => {
     if (existsSync(path)) await openPathExternally(path)
   })
@@ -795,6 +1178,136 @@ function registerIpc(): void {
     const url = providerConsoleUrl(providerId || getApiSettings().providerId)
     if (url) await openExternalUrl(url)
   })
+}
+
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+function remotePathAllowed(path: string): boolean {
+  if (!path || !isAbsolute(path)) return false
+  const roots = getStoredRemoteSettings().allowedRoots || [homedir()]
+  const target = realpathOrSelf(path)
+  return roots.some((root) => {
+    const realRoot = realpathOrSelf(root)
+    const rel = relative(realRoot, target)
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  })
+}
+
+function broadcastSettingsChanged(): void {
+  hub.broadcast('settings:changed', getSettingsSnapshot())
+  hub.broadcast('models:changed', null)
+}
+
+function broadcastSessionsChanged(cwd?: string): void {
+  hub.broadcast('sessions:changed', { cwd })
+}
+
+function remoteStatusView(): RemoteStatus {
+  const status = remoteServer?.getStatus() || {
+    running: false,
+    lanUrls: [],
+    clients: 0
+  }
+  const tunnel = tunnelManager?.getStatus()
+  return {
+    ...status,
+    tunnelUrl: tunnel?.url,
+    tunnelRunning: tunnel?.running
+  }
+}
+
+function remoteSettingsView(): RemoteSettings {
+  const base = getRemoteSettings()
+  const status = remoteServer?.getStatus()
+  const tunnel = tunnelManager?.getStatus()
+  const remote = getStoredRemoteSettings()
+  const tunnelSettings = base.tunnel || { provider: 'cloudflare' as const, mode: 'quick' as const }
+  return {
+    ...base,
+    enabled: remote.enabled,
+    lanUrls: status?.lanUrls || [],
+    tunnel: {
+      ...tunnelSettings,
+      running: Boolean(tunnel?.running),
+      url: tunnel?.url,
+      error: tunnel?.error,
+      available: tunnel?.available
+    },
+    devices: hub
+      .listClients()
+      .filter((client) => client.kind === 'remote')
+      .map((client) => ({
+        id: client.id,
+        name: client.deviceName || '浏览器',
+        ip: client.ip,
+        lastSeenAt: new Date().toISOString(),
+        current: true
+      })),
+    error: !remote.passwordHash
+      ? '请先设置远程访问账号密码。'
+      : status?.error || tunnel?.error
+  }
+}
+
+function ensureTunnelManager(): void {
+  if (tunnelManager) return
+  tunnelManager = new TunnelManager((status) => {
+    if (status.error) logDiagnostic(`cloudflared: ${status.error}`)
+    hub.broadcast('remote:status', remoteStatusView())
+  }, join(app.getPath('userData'), 'cloudflared'))
+  void tunnelManager.detect().then(() => {
+    hub.broadcast('remote:status', remoteStatusView())
+  })
+}
+
+async function applyRemoteSettings(): Promise<void> {
+  const remote = getStoredRemoteSettings()
+  if (!remote.enabled) {
+    await remoteServer?.stop()
+    remoteServer = null
+    await tunnelManager?.stop()
+    tunnelManager = null
+    hub.broadcast('remote:status', remoteStatusView())
+    return
+  }
+  if (!remote.passwordSalt || !remote.passwordHash) {
+    logDiagnostic('remote access enabled without credentials; server not started')
+    hub.broadcast('remote:status', remoteStatusView())
+    return
+  }
+  if (!remoteServer) {
+    remoteServer = new RemoteServer({
+      hub,
+      auth: remoteAuth,
+      staticRoot: join(app.getAppPath(), 'out', 'renderer'),
+      getDefaults: () => appDefaults(),
+      getSettings: () => getSettingsSnapshot(),
+      getRemoteStatus: () => remoteStatusView(),
+      getClaudeCliStatus: () => lastCliStatus,
+      log: (line) => logDiagnostic(line)
+    })
+  }
+  const current = remoteServer.getStatus()
+  if (current.running && current.port === remote.port && current.bind === remote.bind) {
+    // Configuration did not change (for example, the user only started a
+    // tunnel). Restarting here would drop every connected phone for nothing.
+    hub.broadcast('remote:status', remoteStatusView())
+    return
+  }
+  try {
+    await remoteServer.start(remote.port, remote.bind)
+  } catch (error) {
+    logDiagnostic(
+      `remote server failed: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+  hub.broadcast('remote:status', remoteStatusView())
 }
 
 function showWindow(): void {
@@ -951,6 +1464,8 @@ if (hasSingleInstanceLock) {
     // Finder-launched macOS apps miss the login shell PATH; restore it before
     // any child process (Claude Code tools, plugins, background sessions) runs.
     ensureMacPath()
+    installDiagnostics()
+    installContentSecurityPolicy()
     installApplicationMenu()
     if (process.platform === 'darwin') {
       app.setAboutPanelOptions({
@@ -964,6 +1479,8 @@ if (hasSingleInstanceLock) {
     }
     registerIpc()
     createWindow()
+    ensureTunnelManager()
+    void applyRemoteSettings()
     if (runningUnderWsl) {
       // WSLg has no tray host, and global shortcuts do not cross into Windows.
       syncGlobalShortcut(false)
@@ -995,6 +1512,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   quitting = true
   globalShortcut.unregisterAll()
+  void remoteServer?.stop()
+  void tunnelManager?.stop()
   for (const manager of managers.values()) void manager.stop()
   managers.clear()
 })

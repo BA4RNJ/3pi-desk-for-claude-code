@@ -1,4 +1,3 @@
-import { diffLines } from 'diff'
 import {
   Bot,
   CheckCircle2,
@@ -17,8 +16,9 @@ import {
   Wrench,
   type LucideIcon
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ToolBlock } from '../types'
+import { DiffView } from './DiffView'
 
 interface ToolMeta {
   label: string
@@ -43,6 +43,7 @@ const TOOL_META: Record<string, ToolMeta> = {
 
 function metaFor(name: string): ToolMeta {
   if (TOOL_META[name]) return TOOL_META[name]
+  if (name === 'mcp__3pi-web-search__web_search') return { label: '联网搜索', icon: Globe }
   if (name.startsWith('mcp__')) return { label: name.replace(/^mcp__/, ''), icon: Wrench }
   return { label: name || '工具', icon: Wrench }
 }
@@ -91,29 +92,6 @@ const STATUS_TEXT: Record<ToolBlock['status'], string> = {
   running: '执行中',
   done: '完成',
   error: '失败'
-}
-
-function DiffView({ before, after }: { before: string; after: string }) {
-  const parts = useMemo(() => diffLines(before, after), [before, after])
-  return (
-    <div className="diff-view">
-      {parts.map((part, index) => {
-        const lines = part.value.replace(/\n$/, '').split('\n')
-        const className = part.added ? 'diff-add' : part.removed ? 'diff-del' : 'diff-same'
-        const sign = part.added ? '+' : part.removed ? '−' : ' '
-        return (
-          <div key={index} className={className}>
-            {lines.map((line, lineIndex) => (
-              <div className="diff-line" key={lineIndex}>
-                <span className="diff-sign">{sign}</span>
-                <span>{line || ' '}</span>
-              </div>
-            ))}
-          </div>
-        )
-      })}
-    </div>
-  )
 }
 
 function TodoView({ input }: { input: Record<string, unknown> }) {

@@ -5,6 +5,7 @@ import SwiftUI
   @Published var items = [[String: Any]]()
   @Published var error = ""
   @Published var loading = false
+  @Published var selectedIndex = 0
   func models(_ model: AppModel) {
     loading = true
     model.call("models:list") { result in
@@ -18,12 +19,25 @@ import SwiftUI
     }
   }
   func completions(_ model: AppModel) {
-    if model.draft.hasPrefix("/") {
+    selectedIndex = 0
+    if model.draft.hasPrefix("/") && !model.draft.contains(" ") {
+      let needle = String(model.draft.dropFirst()).lowercased()
+      let filterCommands: ([[String: Any]]) -> [[String: Any]] = { list in
+        guard !needle.isEmpty else { return list }
+        return list.filter {
+          string($0["name"]).lowercased().contains(needle)
+            || string($0["description"]).lowercased().contains(needle)
+        }
+      }
       if model.hasSession {
-        model.call("commands") { if case .success(let value) = $0 { self.items = objects(value) } }
+        model.call("commands") {
+          if case .success(let value) = $0 { self.items = filterCommands(objects(value)) }
+        }
       } else {
         model.call("ui:options") {
-          if case .success(let value) = $0 { self.items = objects(dictionary(value)["commands"]) }
+          if case .success(let value) = $0 {
+            self.items = filterCommands(objects(dictionary(value)["commands"]))
+          }
         }
       }
     } else if let last = model.draft.split(separator: " ").last, last.hasPrefix("@"),

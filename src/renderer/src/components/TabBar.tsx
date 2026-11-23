@@ -26,6 +26,7 @@ export function TabBar({
         {tabOrder.map((id) => {
           const tab = tabs[id]
           if (!tab) return null
+          const question = tab.permissions.some((request) => request.kind === 'question')
           const permission = tab.permissions.length > 0
           const active = id === activeTabId
           return (
@@ -33,7 +34,10 @@ export function TabBar({
               key={id}
               role="button"
               tabIndex={0}
-              className={`tab ${active ? 'is-active' : ''}`}
+              data-tab-id={id}
+              className={`tab ${active ? 'is-active' : ''} ${
+                question ? 'is-question' : ''
+              }`}
               onClick={() => onActivate(id)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -41,15 +45,17 @@ export function TabBar({
                   onActivate(id)
                 }
               }}
-              title={tab.title}
+              title={question ? `${tab.title} · 需要你的回答` : tab.title}
             >
               <span
                 className={`tab-dot ${
-                  permission
-                    ? 'tab-dot-permission'
-                    : tab.state.running || tab.state.connecting
-                      ? 'tab-dot-running'
-                      : ''
+                  question
+                    ? 'tab-dot-question'
+                    : permission
+                      ? 'tab-dot-permission'
+                      : tab.state.running || tab.state.connecting
+                        ? 'tab-dot-running'
+                        : ''
                 }`}
               />
               <span

@@ -5,6 +5,82 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- In-chat search (`Ctrl/Cmd + F`) with match highlighting and next/previous navigation, plus a
+  prompt timeline that jumps to any earlier question without leaving the chat.
+- File panel **Git changes** tab: branch name, uncommitted files with status and line counts,
+  per-file Git diff preview, and one-click “review changes” / “generate commit message” prompts.
+- Rewind dialog expands each affected file into a before/after diff before restoring the
+  checkpoint.
+- Remote access QR pairing: the settings panel renders a QR code for LAN and tunnel URLs; scanning
+  it logs in with a single-use five-minute pairing token (the code is stripped from the URL after
+  use). Permission and question prompts now raise a browser/system notification and vibrate on
+  mobile when the owning tab is not focused.
+- Cloudflare Tunnel auto-reconnect with exponential backoff when `cloudflared` exits unexpectedly.
+- One-click API profile failover: when a turn fails and several profiles are saved, the error
+  banner switches profiles and resends the last message.
+- Local usage history: each completed turn is tallied by day, model, and project (30 days kept
+  locally); Settings → Usage shows today/7-day totals, daily rows, and model/project rankings.
+- About now checks the latest GitHub Release alongside the SDK version and links to the release
+  page.
+- macOS native composer: slash-command and `@` file suggestions can be navigated with the arrow
+  keys, accepted with Tab/Enter, dismissed with Esc, and scroll the selection into view.
+- Project-directory home with project search, a per-project page with a composer and
+  model/effort/permission/web-search controls at the top and searchable chat history below, and
+  independent unsent drafts for every chat and project. Explicit home buttons in the sidebar and
+  top bar.
+- Copy/move a chat to another workspace. Move hides the original from the list but keeps its
+  transcript on disk; copy creates an independent session.
+- Relocate a project whose folder was renamed or moved. The project page detects the missing path
+  and offers 重新定位文件夹; old transcripts are copied to the new location with `cwd` rewritten
+  (originals are kept), and recent projects are updated. Starting or resuming a chat in a missing
+  folder now reports an actionable error instead of hanging on an opaque spawn failure.
+- Live AI work timer in the top bar, accumulated per chat.
+- Live output speed (`tok/s`) in the top bar next to the token totals, context usage, and work
+  timer. It is estimated from streaming deltas and calibrated against exact output-token counts.
+- Warm khaki, monochrome, blue, and green palettes plus a custom accent colour picker. The
+  monochrome/blue/green palettes keep white (or dark neutral) surfaces and tint only controls.
+  The Settings window is fully opaque with a fixed top bar for close/save.
+- Web-search toggle next to the model/effort/permission controls.
+- Subscription/account profiles: save multiple plans or tokens, switch from the model picker's
+  independent **API configuration / subscriptions** box (models are in a separate box below), and
+  manage/update/delete them in Settings → API. The API page now defaults to a clean list; the full
+  form opens only via **Add configuration**/**Edit**, and its single **Save configuration** action
+  creates or updates the profile and sets it active. New subscriptions appear immediately and can
+  be saved without typing a name.
+- Cross-workspace copy helpers and session-copy tests.
+- Bing and Baidu as no-key web-search providers for networks where DuckDuckGo is unreachable.
+- `/help` is answered locally with the full slash-command list instead of being forwarded to the
+  headless Claude Code CLI, which rejects the terminal-only command.
+
+### Changed
+
+- Long transcripts use `content-visibility` per message so switching tabs and streaming stays
+  cheap; message heights are preserved with intrinsic sizing.
+- The renderer exposes a render-time `t()` helper so new high-frequency UI strings can be
+  translated without waiting for the DOM observer.
+- `useDesk` helpers (tab helpers, appearance effects) moved into dedicated modules; the public
+  `DeskController` surface is unchanged.
+- AskUserQuestion, permission, and plan prompts are bound to their own chat tab. A background
+  question no longer appears over another conversation; its tab pulses with the accent colour and
+  the owning transcript receives an attention-style system notice. The inline question card also
+  flashes when it appears.
+- Edit/withdraw keeps the original visible chat title; the hidden fallback transcript no longer
+  surfaces as `(fork)`.
+- Model catalog discovery no longer blocks the project home at startup.
+- Compact/detailed and User/All switching preserve scroll position instead of jumping to the top
+  of a long transcript.
+- Composer text and the AI work timer are kept local to their components, avoiding app-wide
+  re-renders on every keystroke and timer tick.
+- Message rendering is memoized by a revision counter, so streaming one reply no longer
+  re-renders every earlier markdown/tool card in a long transcript.
+- The slash-command menu now lists every available command instead of the first eight, scrolls
+  the keyboard selection into view automatically, and opens below the composer on the project
+  page so the list is not clipped by the top of the window.
+
 ## [0.4.3] - 2026-11-03
 
 ### Changed

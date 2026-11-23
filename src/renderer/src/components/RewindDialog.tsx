@@ -1,29 +1,103 @@
-import { AlertTriangle, RotateCcw, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { AlertTriangle, ChevronDown, ChevronRight, FileCode2, RotateCcw, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import type { RewindPreview } from '../../../shared/types'
+import type { UIMessage } from '../types'
+import { DiffView } from './DiffView'
 
 interface RewindDialogProps {
   messageId: string
+  cwd?: string
+  messages?: UIMessage[]
   onPreview: (messageId: string) => Promise<RewindPreview>
   onApply: (messageId: string) => Promise<RewindPreview>
   onClose: () => void
 }
 
+interface TurnFileDiff {
+  path: string
+  before: string
+  after: string
+}
+
+function collectEditsSinceMessage(
+  messages: UIMessage[],
+  rewindMessageId: string,
+  cwd?: string
+): TurnFileDiff[] {
+  const startIdx = messages.findIndex(
+    (msg) =>
+      msg.role === 'user' && (msg.rewindId === rewindMessageId || msg.id === rewindMessageId)
+  )
+  const slice = startIdx >= 0 ? messages.slice(startIdx) : messages
+  const byFile = new Map<string, { before: string; after: string }>()
+  const prefix = cwd ? (cwd.endsWith('/') ? cwd : `${cwd}/`) : ''
+
+  for (const msg of slice) {
+    if (msg.role !== 'assistant') continue
+    for (const block of msg.blocks) {
+      if (block.kind !== 'tool') continue
+      const rawPath =
+        typeof block.input.file_path === 'string'
+          ? block.input.file_path
+          : typeof block.input.path === 'string'
+            ? block.input.path
+            : ''
+      if (!rawPath) continue
+      const normPath = prefix && rawPath.startsWith(prefix) ? rawPath.slice(prefix.length) : rawPath
+      if (block.name === 'Edit' || block.name === 'MultiEdit') {
+        const oldStr = typeof block.input.old_string === 'string' ? block.input.old_string : ''
+        const newStr = typeof block.input.new_string === 'string' ? block.input.new_string : ''
+        const prev = byFile.get(normPath)
+        byFile.set(normPath, {
+          before: prev ? `${prev.before}\n---\n${oldStr}` : oldStr,
+          after: prev ? `${prev.after}\n---\n${newStr}` : newStr
+        })
+      } else if (block.name === 'Write') {
+        const content = typeof block.input.content === 'string' ? block.input.content : ''
+        const prev = byFile.get(normPath)
+        byFile.set(normPath, {
+          before: prev?.before || '',
+          after: content
+        })
+      }
+    }
+  }
+
+  return [...byFile.entries()].map(([path, item]) => ({
+    path,
+    before: item.before,
+    after: item.after
+  }))
+}
+
 export function RewindDialog({
   messageId,
+  cwd,
+  messages = [],
   onPreview,
   onApply,
   onClose
 }: RewindDialogProps) {
   const [preview, setPreview] = useState<RewindPreview | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [gitDiff, setGitDiff] = useState<{ before: string; after: string } | null>(null)
   const [error, setError] = useState('')
   const [applying, setApplying] = useState(false)
+
+  const recordedEdits = useMemo(
+    () => collectEditsSinceMessage(messages, messageId, cwd),
+    [cwd, messageId, messages]
+  )
 
   useEffect(() => {
     let disposed = false
     onPreview(messageId)
       .then((result) => {
-        if (!disposed) setPreview(result)
+        if (!disposed) {
+          setPreview(result)
+          const first = result.filesChanged?.[0] || recordedEdits[0]?.path || null
+          setSelectedFile(first)
+        }
       })
       .catch((previewError) => {
         if (!disposed) {
@@ -33,7 +107,36 @@ export function RewindDialog({
     return () => {
       disposed = true
     }
-  }, [messageId, onPreview])
+  }, [messageId, onPreview, recordedEdits])
+
+  useEffect(() => {
+    if (!selectedFile || !cwd) {
+      setGitDiff(null)
+      return
+    }
+    const recorded = recordedEdits.find(
+      (item) => item.path === selectedFile || selectedFile.endsWith(item.path)
+    )
+    if (recorded) {
+      // Replay reverses the change: current (after) -> checkpoint (before)
+      setGitDiff({ before: recorded.after, after: recorded.before })
+      return
+    }
+    let disposed = false
+    window.desk
+      .gitDiff(cwd, selectedFile)
+      .then((diff) => {
+        if (!disposed && (diff.before || diff.after)) {
+          setGitDiff({ before: diff.after, after: diff.before })
+        }
+      })
+      .catch(() => {
+        if (!disposed) setGitDiff(null)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [cwd, recordedEdits, selectedFile])
 
   const apply = async (): Promise<void> => {
     setApplying(true)
@@ -98,9 +201,30 @@ export function RewindDialog({
 
             {preview.filesChanged && preview.filesChanged.length > 0 && (
               <div className="rewind-files">
-                {preview.filesChanged.slice(0, 30).map((file) => (
-                  <code key={file}>{file}</code>
-                ))}
+                <p className="settings-note" style={{ margin: '0 0 6px' }}>
+                  点击下方文件名可预览恢复前后的代码差异：
+                </p>
+                {preview.filesChanged.slice(0, 30).map((file) => {
+                  const isSelected = selectedFile === file
+                  return (
+                    <div key={file} className="rewind-file-item">
+                      <button
+                        type="button"
+                        className={`rewind-file-button ${isSelected ? 'is-selected' : ''}`}
+                        onClick={() => setSelectedFile(isSelected ? null : file)}
+                      >
+                        {isSelected ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        <FileCode2 size={13} />
+                        <code>{file}</code>
+                      </button>
+                      {isSelected && gitDiff && (
+                        <div className="rewind-diff-box">
+                          <DiffView before={gitDiff.before} after={gitDiff.after} compact />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 {preview.filesChanged.length > 30 && (
                   <small>还有 {preview.filesChanged.length - 30} 个文件…</small>
                 )}

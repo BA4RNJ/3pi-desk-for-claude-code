@@ -41,6 +41,15 @@ export function messagesToMarkdown(messages: UIMessage[], title: string): string
       }
       continue
     }
+    if (message.role === 'notice' && message.help?.length) {
+      lines.push(`> ${message.text}`, '')
+      for (const command of message.help) {
+        const hint = command.argumentHint ? ` ${command.argumentHint}` : ''
+        lines.push(`- \`/${command.name}\`${hint} — ${command.description}`)
+      }
+      lines.push('')
+      continue
+    }
     lines.push(`> ${message.text}`, '')
   }
 

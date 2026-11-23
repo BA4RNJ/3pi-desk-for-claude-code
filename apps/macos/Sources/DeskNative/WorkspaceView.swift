@@ -579,6 +579,19 @@ private struct NativeChatView: View {
       }.padding(.horizontal, 32).frame(maxWidth: .infinity)
     }
   }
+  private func acceptSuggestion(_ item: [String: Any]) {
+    if model.draft.hasPrefix("/") {
+      model.draft = "/" + string(item["name"]) + " "
+    } else {
+      let text = model.draft
+      model.draft =
+        String(text.prefix(upTo: text.lastIndex(of: "@") ?? text.endIndex)) + "@"
+        + (string(item["relativePath"]).isEmpty
+          ? string(item["path"]) : string(item["relativePath"])) + " "
+    }
+    suggestions.items = []
+  }
+
   private var composer: some View {
     VStack(alignment: .leading, spacing: 8) {
       if let notice = model.notice {
@@ -594,30 +607,33 @@ private struct NativeChatView: View {
         && (model.draft.hasPrefix("/")
           || model.draft.split(separator: " ").last?.hasPrefix("@") == true)
       {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(suggestions.items.prefix(8).enumerated()), id: \.offset) { _, item in
-              Button {
-                if model.draft.hasPrefix("/") {
-                  model.draft = "/" + string(item["name"]) + " "
-                } else {
-                  let text = model.draft
-                  model.draft =
-                    String(text.prefix(upTo: text.lastIndex(of: "@") ?? text.endIndex)) + "@"
-                    + (string(item["relativePath"]).isEmpty
-                      ? string(item["path"]) : string(item["relativePath"])) + " "
-                }
-                suggestions.items = []
-              } label: {
-                HStack {
-                  Text(string(item["name"]))
-                  Text(string(item["description"])).font(.caption).foregroundColor(Palette.muted)
-                  Spacer()
-                }.padding(8)
-              }.buttonStyle(.plain)
+        ScrollViewReader { menuProxy in
+          ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+              ForEach(Array(suggestions.items.enumerated()), id: \.offset) { idx, item in
+                Button {
+                  acceptSuggestion(item)
+                } label: {
+                  HStack {
+                    Text(
+                      model.draft.hasPrefix("/")
+                        ? "/" + string(item["name"])
+                        : (string(item["relativePath"]).isEmpty
+                          ? string(item["name"]) : string(item["relativePath"]))
+                    ).fontWeight(idx == suggestions.selectedIndex ? .semibold : .regular)
+                    Text(string(item["description"])).font(.caption).foregroundColor(Palette.muted)
+                    Spacer()
+                  }.padding(8).background(
+                    idx == suggestions.selectedIndex ? Palette.coral.opacity(0.14) : Color.clear
+                  ).cornerRadius(7)
+                }.buttonStyle(.plain).id("suggestion-\(idx)")
+              }
             }
           }
-        }.frame(maxHeight: 160).modifier(Outline())
+          .onChange(of: suggestions.selectedIndex) { nextIdx in
+            menuProxy.scrollTo("suggestion-\(nextIdx)", anchor: .center)
+          }
+        }.frame(maxHeight: 220).modifier(Outline())
       }
       if !model.attachmentErrors.isEmpty {
         ForEach(Array(model.attachmentErrors.enumerated()), id: \.offset) { index, failure in
@@ -660,7 +676,24 @@ private struct NativeChatView: View {
         NativeComposerInput(
           text: $model.draft, height: $options.editorHeight, submit: { model.send() },
           files: { model.addAttachmentPaths($0) },
-          image: { model.addClipboardImage($0) }
+          image: { model.addClipboardImage($0) },
+          navigateMenu: { delta in
+            guard !suggestions.items.isEmpty else { return false }
+            let count = suggestions.items.count
+            suggestions.selectedIndex = (suggestions.selectedIndex + delta + count) % count
+            return true
+          },
+          acceptMenu: {
+            guard !suggestions.items.isEmpty else { return false }
+            let idx = min(max(0, suggestions.selectedIndex), suggestions.items.count - 1)
+            acceptSuggestion(suggestions.items[idx])
+            return true
+          },
+          dismissMenu: {
+            guard !suggestions.items.isEmpty else { return false }
+            suggestions.items = []
+            return true
+          }
         )
         .frame(height: options.editorHeight)
         .overlay(alignment: .topLeading) {

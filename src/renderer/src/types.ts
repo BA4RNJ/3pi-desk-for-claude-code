@@ -3,8 +3,13 @@ import type {
   EffortSetting,
   PermissionRequestPayload,
   SessionState,
-  SlashCommandInfo
+  SlashCommandInfo,
+  TabTask,
+  TokenUsage
 } from '../../shared/types'
+
+export type { TabTask, TokenUsage } from '../../shared/types'
+import type { TokenRateMeter, TokenRateSnapshot } from './lib/token-rate'
 
 export type ToolStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -39,6 +44,8 @@ interface BaseMessage {
   ts: number
   transcriptId?: string
   parentToolUseId?: string | null
+  /** Bumped when a streamed assistant/tool message changes in place. */
+  revision?: number
 }
 
 export interface UserMessage extends BaseMessage {
@@ -58,7 +65,9 @@ export interface AssistantMessage extends BaseMessage {
 export interface NoticeMessage extends BaseMessage {
   role: 'notice'
   text: string
-  tone: 'info' | 'error'
+  tone: 'info' | 'error' | 'attention'
+  /** Rendered as a command-list card instead of a one-line notice. */
+  help?: SlashCommandInfo[]
   action?: {
     kind: 'rewind'
     messageId: string
@@ -68,17 +77,6 @@ export interface NoticeMessage extends BaseMessage {
 export type UIMessage = UserMessage | AssistantMessage | NoticeMessage
 
 export type ThemeMode = 'light' | 'dark' | 'system'
-
-export interface TabTask {
-  id: string
-  description: string
-  subagentType?: string
-  status: 'running' | 'completed' | 'failed' | 'stopped'
-  summary?: string
-  parentTaskId?: string
-  outputFile?: string
-  updatedAt: number
-}
 
 export interface TodoItem {
   content: string
@@ -90,17 +88,6 @@ export interface ComposerDraft {
   attachments: Attachment[]
   /** Changes when a new draft should be loaded into the composer. */
   token: number
-}
-
-export interface TokenUsage {
-  inputTokens: number
-  outputTokens: number
-  cacheReadInputTokens: number
-  cacheCreationInputTokens: number
-  costUSD?: number
-  contextWindow?: number
-  canonicalModel?: string
-  provider?: string
 }
 
 export interface TabView {
@@ -116,9 +103,19 @@ export interface TabView {
   tasks: TabTask[]
   usage?: Record<string, TokenUsage>
   commands: SlashCommandInfo[]
+  /** Total time the AI has been working in this tab, in milliseconds. */
+  workElapsedMs: number
+  /** Set while a turn is running; the UI adds now - workStartedAt. */
+  workStartedAt?: number
+  /** Latest live output rate while the assistant is generating. */
+  tokenRate?: TokenRateSnapshot
 }
 
 export interface TabRuntimeData extends TabView {
   started: boolean
   streamIds: Map<string, string>
+  /** Runtime meter for the live tok/s estimate; not persisted. */
+  rateMeter: TokenRateMeter
+  /** Selected subscription model that should win over the CLI init report. */
+  modelOverride?: string
 }

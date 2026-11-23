@@ -267,7 +267,9 @@ async function readMcpServers(
       config: serverConfig,
       status: status?.status,
       source: status?.source,
-      tools: status?.tools
+      tools: status?.tools,
+      toolDetails: status?.toolDetails,
+      error: status?.error
     })
   }
   for (const [name, serverConfig] of Object.entries(
@@ -280,7 +282,9 @@ async function readMcpServers(
       config: serverConfig,
       status: status?.status,
       source: status?.source,
-      tools: status?.tools
+      tools: status?.tools,
+      toolDetails: status?.toolDetails,
+      error: status?.error
     })
   }
   for (const [name, serverConfig] of Object.entries(projectConfig.mcpServers || {})) {
@@ -291,7 +295,9 @@ async function readMcpServers(
       config: serverConfig,
       status: status?.status,
       source: status?.source,
-      tools: status?.tools
+      tools: status?.tools,
+      toolDetails: status?.toolDetails,
+      error: status?.error
     })
   }
 

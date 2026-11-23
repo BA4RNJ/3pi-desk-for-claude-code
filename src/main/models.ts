@@ -52,6 +52,18 @@ const FALLBACK_MODELS: ModelOption[] = [
 
 let cache: { at: number; models: ModelOption[]; credentials: string } | null = null
 
+function modelCacheKey(): string {
+  const { baseUrl, token } = getApiCredentials()
+  const providerId = getApiSettings().providerId || 'custom'
+  const custom = getCustomModels().filter(
+    (entry) => !entry.providerId || entry.providerId === providerId
+  )
+  const customKey = custom
+    .map((entry) => `${entry.id}:${entry.name || ''}:${entry.contextWindow || ''}`)
+    .join('|')
+  return `${baseUrl}\n${token}\n${providerId}\n${customKey}`
+}
+
 function trimBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '')
 }
@@ -352,16 +364,31 @@ export async function findModelContextWindow(
   return match?.contextWindow
 }
 
+/**
+ * Synchronous cache lookup for the session-start hot path. Never performs
+ * network I/O; if the cache is cold, the caller starts the session without a
+ * context window and warms the cache in the background.
+ */
+export function getCachedModelContextWindow(modelId?: string): number | undefined {
+  const id = modelId || getApiSettings().model
+  if (!id || !cache) return undefined
+  if (cache.credentials !== modelCacheKey()) return undefined
+  if (Date.now() - cache.at >= 5 * 60_000) return undefined
+  return cache.models.find(
+    (model) =>
+      model.id === id ||
+      model.name === id ||
+      model.id === id.split('/').at(-1)
+  )?.contextWindow
+}
+
 export async function getModels(force = false): Promise<ModelOption[]> {
   const { baseUrl, token, model } = getApiCredentials()
   const providerId = getApiSettings().providerId || 'custom'
   const custom = getCustomModels().filter(
     (entry) => !entry.providerId || entry.providerId === providerId
   )
-  const customKey = custom
-    .map((entry) => `${entry.id}:${entry.name || ''}:${entry.contextWindow || ''}`)
-    .join('|')
-  const credentials = `${baseUrl}\n${token}\n${providerId}\n${customKey}`
+  const credentials = modelCacheKey()
   if (
     !force &&
     cache &&

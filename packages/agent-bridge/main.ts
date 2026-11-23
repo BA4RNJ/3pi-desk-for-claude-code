@@ -1,5 +1,14 @@
-import { getPreferences, buildExtraArgs, saveCwd } from '../../src/main/settings'
-import { findModelContextWindow } from '../../src/main/models'
+import {
+  getApiSettings,
+  getPreferences,
+  getWebSearchConfig,
+  buildExtraArgs,
+  saveCwd
+} from '../../src/main/settings'
+import {
+  findModelContextWindow,
+  getCachedModelContextWindow
+} from '../../src/main/models'
 import { SessionManager, type StartOptions } from '../../src/main/session'
 import { cancelPluginAction } from '../../src/main/extensions'
 import { service } from './services'
@@ -9,7 +18,11 @@ class NativeSessionManager extends SessionManager {
   override async start(options: StartOptions) {
     const preferences = getPreferences()
     saveCwd(options.cwd)
-    return super.start({ ...options, extraArgs: buildExtraArgs(preferences), maxBudgetUsd: preferences.maxBudgetUsd ?? undefined, additionalDirectories: preferences.additionalDirectories, allowedTools: preferences.allowedTools, disallowedTools: preferences.disallowedTools, contextWindow: await findModelContextWindow(options.model) })
+    const contextWindow = getCachedModelContextWindow(options.model)
+    if (contextWindow === undefined) {
+      void findModelContextWindow(options.model).catch(() => undefined)
+    }
+    return super.start({ ...options, extraArgs: buildExtraArgs(preferences), maxBudgetUsd: preferences.maxBudgetUsd ?? undefined, additionalDirectories: preferences.additionalDirectories, allowedTools: preferences.allowedTools, disallowedTools: preferences.disallowedTools, contextWindow, apiProviderId: getApiSettings().providerId, webSearch: getWebSearchConfig() })
   }
   override async setModel(model: string) { return super.setModel(model, await findModelContextWindow(model)) }
 }

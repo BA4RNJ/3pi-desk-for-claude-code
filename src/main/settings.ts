@@ -12,9 +12,22 @@ import type {
   CustomModel,
   PermissionRules,
   PreferencesPatch,
-  SettingsSnapshot
+  SettingsSnapshot,
+  UsageHistoryDay,
+  UsageHistorySnapshot,
+  UsageTurnRecordInput,
+  WebSearchPatch,
+  WebSearchProvider,
+  WebSearchSettings
 } from '../shared/types'
 import { PROVIDER_PRESETS, findProviderPreset } from '../shared/providers'
+import type { WebSearchRuntimeConfig } from '../shared/web-search'
+import type {
+  RemoteSettings,
+  RemoteSettingsPatch,
+  RemoteTunnelSettings
+} from '../shared/types'
+import { hashPassword, type RemoteCredentials } from './remote-auth'
 
 const DEFAULT_PROVIDER = PROVIDER_PRESETS[0]
 const DEFAULT_BASE_URL = DEFAULT_PROVIDER.baseUrl
@@ -32,8 +45,11 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   globalShortcut: false,
   fontScale: 1,
   accent: 'coral',
+  palette: 'claude',
   compactMode: false,
   recentWorkspaces: [],
+  projectFolders: [],
+  workspaceFolderMap: {},
   chatSettings: {},
   lastChatSettings: {},
   hiddenSessions: []
@@ -54,14 +70,60 @@ interface StoredProfile {
   authMode?: ApiAuthMode
 }
 
+interface StoredWebSearch {
+  enabled: boolean
+  provider: WebSearchProvider
+  endpoint: string
+  apiKey: string
+  maxResults: number
+}
+
+export interface StoredRemoteSettings {
+  enabled: boolean
+  port: number
+  bind: 'localhost' | 'lan'
+  username: string
+  /** Hex-encoded scrypt salt; empty until a password is configured. */
+  passwordSalt: string
+  /** Hex-encoded scrypt hash; empty until a password is configured. */
+  passwordHash: string
+  tunnel?: RemoteTunnelSettings
+  /** Remote clients may only start sessions under these roots. */
+  allowedRoots?: string[]
+}
+
+const DEFAULT_REMOTE_SETTINGS: StoredRemoteSettings = {
+  enabled: false,
+  port: 3789,
+  bind: 'lan',
+  username: 'ba4rnj',
+  passwordSalt: '',
+  passwordHash: '',
+  allowedRoots: [homedir()]
+}
+
 interface AppSettingsFile {
   cwd?: string
   preferences?: Partial<AppPreferences>
   profiles?: StoredProfile[]
   providerId?: string
+  activeProfileId?: string | null
   customModels?: CustomModel[]
+  webSearch?: Partial<StoredWebSearch>
   /** Explicit path to a `claude` executable; overrides auto-detection. */
   claudeCliPath?: string | null
+  /** LAN / tunnel web access configuration. */
+  remote?: StoredRemoteSettings
+  /** Daily local usage analytics history (last 30 days). */
+  usageHistory?: UsageHistoryDay[]
+}
+
+const DEFAULT_WEB_SEARCH: StoredWebSearch = {
+  enabled: true,
+  provider: 'duckduckgo',
+  endpoint: '',
+  apiKey: '',
+  maxResults: 6
 }
 
 function claudeDir(): string {
@@ -147,6 +209,65 @@ export function buildExtraArgs(preferences: AppPreferences): Record<string, stri
   return args
 }
 
+function storedWebSearch(): StoredWebSearch {
+  return { ...DEFAULT_WEB_SEARCH, ...(readAppSettings().webSearch || {}) }
+}
+
+export function getWebSearchConfig(): WebSearchRuntimeConfig {
+  const config = storedWebSearch()
+  return {
+    provider: config.provider,
+    endpoint: config.endpoint,
+    apiKey: config.apiKey,
+    maxResults: config.maxResults,
+    enabled: config.enabled
+  }
+}
+
+export function getWebSearchSettings(): WebSearchSettings {
+  const config = storedWebSearch()
+  return {
+    enabled: config.enabled,
+    provider: config.provider,
+    endpoint: config.endpoint,
+    hasApiKey: Boolean(config.apiKey),
+    apiKeyMasked: maskToken(config.apiKey),
+    maxResults: config.maxResults
+  }
+}
+
+export function saveWebSearchSettings(patch: WebSearchPatch): WebSearchSettings {
+  const current = storedWebSearch()
+  const provider =
+    patch.provider === 'duckduckgo' ||
+    patch.provider === 'bing' ||
+    patch.provider === 'baidu' ||
+    patch.provider === 'searxng' ||
+    patch.provider === 'tavily' ||
+    patch.provider === 'brave'
+      ? patch.provider
+      : current.provider
+  const endpoint = patch.endpoint !== undefined ? patch.endpoint.trim() : current.endpoint
+  let apiKey = current.apiKey
+  if (patch.apiKey !== undefined) {
+    apiKey = patch.apiKey === null || patch.apiKey.trim() === '' ? '' : patch.apiKey.trim()
+  }
+  const requestedMax = Number.isFinite(patch.maxResults)
+    ? Number(patch.maxResults)
+    : current.maxResults
+  const maxResults = Math.min(10, Math.max(1, Math.round(requestedMax)))
+  writeAppSettings({
+    webSearch: {
+      enabled: patch.enabled ?? current.enabled,
+      provider,
+      endpoint,
+      apiKey,
+      maxResults
+    }
+  })
+  return getWebSearchSettings()
+}
+
 function inferProviderId(baseUrl?: string): string {
   return findProviderPreset(baseUrl)?.id || 'custom'
 }
@@ -165,14 +286,22 @@ export function getApiSettings(): ApiSettings {
   const env = settings.env || {}
   const token = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || ''
   const baseUrl = env.ANTHROPIC_BASE_URL || DEFAULT_BASE_URL
-  const providerId = readAppSettings().providerId || inferProviderId(baseUrl)
+  const appSettings = readAppSettings()
+  const providerId = appSettings.providerId || inferProviderId(baseUrl)
+  const candidateProfileId = appSettings.activeProfileId || undefined
+  const profileId =
+    candidateProfileId &&
+    storedProfiles().some((profile) => profile.id === candidateProfileId)
+      ? candidateProfileId
+      : undefined
   return {
     baseUrl,
     model: env.ANTHROPIC_MODEL || DEFAULT_MODEL,
     tokenMasked: token ? `${token.slice(0, 8)}…${token.slice(-4)}` : '',
     hasToken: Boolean(token),
     providerId,
-    authMode: inferAuthMode(providerId, env)
+    authMode: inferAuthMode(providerId, env),
+    profileId
   }
 }
 
@@ -269,20 +398,26 @@ export function saveApiProfile(input: ApiProfileInput): ApiProfile[] {
 }
 
 export function deleteApiProfile(id: string): ApiProfile[] {
-  writeAppSettings({ profiles: storedProfiles().filter((profile) => profile.id !== id) })
+  const activeProfileId = readAppSettings().activeProfileId
+  writeAppSettings({
+    profiles: storedProfiles().filter((profile) => profile.id !== id),
+    ...(activeProfileId === id ? { activeProfileId: null } : {})
+  })
   return getApiProfiles()
 }
 
 export function applyApiProfile(id: string): ApiSettings {
   const profile = storedProfiles().find((item) => item.id === id)
   if (!profile) throw new Error('Profile not found.')
-  return saveApiSettings({
+  saveApiSettings({
     baseUrl: profile.baseUrl,
     model: profile.model,
     token: profile.token,
     providerId: profile.providerId,
     authMode: profile.authMode
   })
+  writeAppSettings({ activeProfileId: id })
+  return getApiSettings()
 }
 
 export function getCustomModels(): CustomModel[] {
@@ -325,8 +460,83 @@ export function getSettingsSnapshot(): SettingsSnapshot {
     preferences: getPreferences(),
     permissionRules: getPermissionRules(),
     profiles: getApiProfiles(),
-    customModels: getCustomModels()
+    customModels: getCustomModels(),
+    webSearch: getWebSearchSettings()
   }
+}
+
+export function getStoredRemoteSettings(): StoredRemoteSettings {
+  const stored = readAppSettings().remote
+  const merged = { ...DEFAULT_REMOTE_SETTINGS, ...(stored || {}) }
+  if (!merged.allowedRoots || merged.allowedRoots.length === 0) {
+    merged.allowedRoots = [homedir()]
+  }
+  return merged
+}
+
+export function getRemoteCredentials(): RemoteCredentials | null {
+  const remote = getStoredRemoteSettings()
+  if (!remote.username || !remote.passwordSalt || !remote.passwordHash) return null
+  return {
+    username: remote.username,
+    salt: remote.passwordSalt,
+    hash: remote.passwordHash
+  }
+}
+
+export function getRemoteSettings(): RemoteSettings {
+  const remote = getStoredRemoteSettings()
+  return {
+    enabled: remote.enabled,
+    port: remote.port,
+    bind: remote.bind,
+    username: remote.username,
+    hasPassword: Boolean(remote.passwordSalt && remote.passwordHash),
+    lanUrls: [],
+    tunnel: remote.tunnel
+      ? { ...remote.tunnel, running: false }
+      : undefined,
+    devices: []
+  }
+}
+
+export function saveRemoteSettings(patch: RemoteSettingsPatch): RemoteSettings {
+  const current = getStoredRemoteSettings()
+  const next: StoredRemoteSettings = { ...current }
+  if (patch.enabled !== undefined) next.enabled = patch.enabled
+  if (patch.port !== undefined) {
+    const port = Math.trunc(patch.port)
+    if (Number.isFinite(port) && port >= 1024 && port <= 65535) next.port = port
+  }
+  if (patch.bind === 'localhost' || patch.bind === 'lan') next.bind = patch.bind
+  if (patch.username !== undefined) {
+    const username = patch.username.trim()
+    if (username) next.username = username
+  }
+  if (patch.password) {
+    const { salt, hash } = hashPassword(patch.password)
+    next.passwordSalt = salt
+    next.passwordHash = hash
+  }
+  if (patch.tunnel !== undefined) {
+    next.tunnel = patch.tunnel || undefined
+  }
+  writeAppSettings({ remote: next })
+  return getRemoteSettings()
+}
+
+export function setRemoteCredentials(username: string, password: string): RemoteSettings {
+  const current = getStoredRemoteSettings()
+  const { salt, hash } = hashPassword(password)
+  writeAppSettings({
+    remote: {
+      ...current,
+      username: username.trim() || current.username,
+      passwordSalt: salt,
+      passwordHash: hash
+    }
+  })
+  return getRemoteSettings()
 }
 
 export function saveApiSettings(patch: ApiSettingsPatch): ApiSettings {
@@ -360,7 +570,9 @@ export function saveApiSettings(patch: ApiSettingsPatch): ApiSettings {
 
   settings.env = env
   writeClaudeSettings(settings)
-  writeAppSettings({ providerId })
+  // A manual API edit means the previous subscription profile is no longer
+  // the source of truth.
+  writeAppSettings({ providerId, activeProfileId: null })
   return getApiSettings()
 }
 
@@ -373,3 +585,91 @@ export function getApiCredentials(): { baseUrl: string; token: string; model: st
     model: env.ANTHROPIC_MODEL || DEFAULT_MODEL
   }
 }
+
+function localDateKey(date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function getUsageHistory(): UsageHistorySnapshot {
+  const days = readAppSettings().usageHistory || []
+  return {
+    days: [...days].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30)
+  }
+}
+
+export function recordUsageTurn(record: UsageTurnRecordInput): UsageHistorySnapshot {
+  const date = record.date?.trim() || localDateKey()
+  const inputTokens = Math.max(0, Math.round(record.inputTokens || 0))
+  const outputTokens = Math.max(0, Math.round(record.outputTokens || 0))
+  const cacheReadTokens = Math.max(0, Math.round(record.cacheReadTokens || 0))
+  const costUsd = Math.max(0, Number(record.costUsd) || 0)
+
+  if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && costUsd === 0) {
+    return getUsageHistory()
+  }
+
+  const days = [...(readAppSettings().usageHistory || [])]
+  let day = days.find((item) => item.date === date)
+  if (!day) {
+    day = {
+      date,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      costUsd: 0,
+      turns: 0,
+      byModel: {},
+      byWorkspace: {}
+    }
+    days.push(day)
+  }
+
+  day.inputTokens += inputTokens
+  day.outputTokens += outputTokens
+  day.cacheReadTokens += cacheReadTokens
+  day.costUsd += costUsd
+  day.turns += 1
+
+  const modelKey = record.model?.trim() || 'default'
+  const prevModel = day.byModel[modelKey] || {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    costUsd: 0
+  }
+  day.byModel[modelKey] = {
+    inputTokens: prevModel.inputTokens + inputTokens,
+    outputTokens: prevModel.outputTokens + outputTokens,
+    cacheReadTokens: prevModel.cacheReadTokens + cacheReadTokens,
+    costUsd: prevModel.costUsd + costUsd
+  }
+
+  if (record.cwd?.trim()) {
+    const cwdKey = record.cwd.trim()
+    const prevWs = day.byWorkspace[cwdKey] || {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      costUsd: 0
+    }
+    day.byWorkspace[cwdKey] = {
+      inputTokens: prevWs.inputTokens + inputTokens,
+      outputTokens: prevWs.outputTokens + outputTokens,
+      cacheReadTokens: prevWs.cacheReadTokens + cacheReadTokens,
+      costUsd: prevWs.costUsd + costUsd
+    }
+  }
+
+  const trimmed = days.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30)
+  writeAppSettings({ usageHistory: trimmed })
+  return { days: trimmed }
+}
+
+export function clearUsageHistory(): UsageHistorySnapshot {
+  writeAppSettings({ usageHistory: [] })
+  return { days: [] }
+}
+

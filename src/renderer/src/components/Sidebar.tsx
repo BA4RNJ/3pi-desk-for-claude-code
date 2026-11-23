@@ -1,7 +1,9 @@
 import {
+  Copy,
   Download,
   FolderOpen,
   GitFork,
+  Home,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -31,17 +33,24 @@ interface SidebarProps {
   pinnedSessions: string[]
   hiddenSessions: string[]
   onNew: () => void
+  onOpenHome: () => void
   onSelect: (session: SessionInfo) => void
   onChooseFolder: () => void
   onRename: (session: SessionInfo) => void
   onTag: (session: SessionInfo) => void
   onExport: (session: SessionInfo) => void
-  onFork: (sessionId: string) => void
+  onCopy: (session: SessionInfo) => void
+  onFork: (session: SessionInfo) => void
   onPin: (sessionId: string) => void
   onDelete: (session: SessionInfo) => void
   onRefresh: () => void
+  hasMoreSessions: boolean
+  loadingMoreSessions: boolean
+  onLoadMoreSessions: () => void
   onThemeChange: (theme: ThemeMode) => void
   onOpenSettings: () => void
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
 function ThemeIcon({ theme }: { theme: ThemeMode }) {
@@ -71,22 +80,35 @@ export function Sidebar({
   pinnedSessions,
   hiddenSessions,
   onNew,
+  onOpenHome,
   onSelect,
   onChooseFolder,
   onRename,
   onTag,
   onExport,
+  onCopy,
   onFork,
   onPin,
   onDelete,
   onRefresh,
+  hasMoreSessions,
+  loadingMoreSessions,
+  onLoadMoreSessions,
   onThemeChange,
-  onOpenSettings
+  onOpenSettings,
+  mobileOpen = false,
+  onMobileClose
 }: SidebarProps) {
+  const closeMobile = (): void => onMobileClose?.()
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SessionInfo[]>([])
+  const [searchLimit, setSearchLimit] = useState(200)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const pinned = new Set(pinnedSessions)
+
+  useEffect(() => {
+    setSearchLimit(200)
+  }, [query])
 
   useEffect(() => {
     const term = query.trim()
@@ -96,7 +118,7 @@ export function Sidebar({
     }
     const timer = window.setTimeout(() => {
       window.desk
-        .listAllSessions(200)
+        .listAllSessions(searchLimit, 0)
         .then((list) => {
           const lower = term.toLowerCase()
           const hidden = new Set(hiddenSessions)
@@ -113,7 +135,7 @@ export function Sidebar({
         .catch(() => setSearchResults([]))
     }, 220)
     return () => window.clearTimeout(timer)
-  }, [hiddenSessions, query])
+  }, [hiddenSessions, query, searchLimit])
 
   useEffect(() => {
     if (!menuFor) return
@@ -140,21 +162,64 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar">
-      <div className="brand">
+    <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
+      <button
+        type="button"
+        className="icon-button sidebar-mobile-close"
+        onClick={closeMobile}
+        aria-label="关闭菜单"
+      >
+        <X size={18} />
+      </button>
+      <button
+        type="button"
+        className="brand brand-button"
+        onClick={() => {
+          closeMobile()
+          onOpenHome()
+        }}
+        title="项目目录"
+      >
         <AppMark size={34} className="brand-mark" />
         <div className="brand-text">
           <strong>3PI Desk</strong>
-          <span>AI 编程工作台</span>
+          <span>项目目录</span>
         </div>
-      </div>
+      </button>
 
-      <button type="button" className="new-chat" onClick={onNew}>
+      <button
+        type="button"
+        className="projects-nav"
+        onClick={() => {
+          closeMobile()
+          onOpenHome()
+        }}
+      >
+        <Home size={15} />
+        <span>项目主页</span>
+      </button>
+
+      <button
+        type="button"
+        className="new-chat"
+        onClick={() => {
+          closeMobile()
+          onNew()
+        }}
+      >
         <Plus size={16} />
         <span>新建对话</span>
       </button>
 
-      <button type="button" className="folder-card" onClick={onChooseFolder} title={cwd}>
+      <button
+        type="button"
+        className="folder-card"
+        onClick={() => {
+          closeMobile()
+          onChooseFolder()
+        }}
+        title={cwd}
+      >
         <span className="folder-card-icon">
           <FolderOpen size={17} />
         </span>
@@ -208,10 +273,14 @@ export function Sidebar({
               role="button"
               tabIndex={0}
               className={`session-item ${active ? 'is-active' : ''}`}
-              onClick={() => onSelect(session)}
+              onClick={() => {
+                closeMobile()
+                onSelect(session)
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
+                  closeMobile()
                   onSelect(session)
                 }
               }}
@@ -253,7 +322,10 @@ export function Sidebar({
                   <button type="button" onClick={() => run(() => onExport(session))}>
                     <Download size={13} /> 导出 Markdown
                   </button>
-                  <button type="button" onClick={() => run(() => onFork(session.sessionId))}>
+                  <button type="button" onClick={() => run(() => onCopy(session))}>
+                    <Copy size={13} /> 复制/迁移
+                  </button>
+                  <button type="button" onClick={() => run(() => onFork(session))}>
                     <GitFork size={13} /> 创建分支
                   </button>
                   <button type="button" onClick={() => run(() => onPin(session.sessionId))}>
@@ -271,6 +343,25 @@ export function Sidebar({
             </div>
           )
         })}
+        {!query.trim() && hasMoreSessions && (
+          <button
+            type="button"
+            className="session-load-more"
+            disabled={loadingMoreSessions}
+            onClick={onLoadMoreSessions}
+          >
+            {loadingMoreSessions ? '正在加载…' : '加载更多会话'}
+          </button>
+        )}
+        {query.trim() && searchResults.length >= searchLimit && (
+          <button
+            type="button"
+            className="session-load-more"
+            onClick={() => setSearchLimit((limit) => limit + 200)}
+          >
+            加载更多搜索结果
+          </button>
+        )}
       </div>
 
       <div className="sidebar-footer">
@@ -283,7 +374,14 @@ export function Sidebar({
           <ThemeIcon theme={theme} />
           <span>{THEME_LABEL[theme]}</span>
         </button>
-        <button type="button" className="footer-button" onClick={onOpenSettings}>
+        <button
+          type="button"
+          className="footer-button"
+          onClick={() => {
+            closeMobile()
+            onOpenSettings()
+          }}
+        >
           <Settings size={16} />
           <span>设置</span>
         </button>

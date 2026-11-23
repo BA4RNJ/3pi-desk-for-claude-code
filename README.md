@@ -115,19 +115,50 @@ Claude Code WSL2, Claude Code macOS, Claude Code plugin marketplace.
 
 ## 主要功能
 
+- **项目主页**：首页是项目目录，可搜索项目；点击项目进入项目页，顶部是新建对话输入框，下面是该项目的全部会话，可搜索。侧栏和顶栏都有返回项目主页的按钮。
 - **工作区与多标签**：会话属于某个工作区（项目文件夹）；每个标签可以独立运行一个对话。
+  每个对话有独立的未发送草稿（文字和附件），切换标签不会互相覆盖。
 - **行内权限确认**：权限请求、澄清问题和计划审批显示在输入框上方，不遮挡整个界面。
 - **Agent 能力**：流式回复、思考块、工具卡片（Bash、编辑、diff、读取/搜索、子代理、待办）、
-  文件检查点恢复、斜杠命令、模型与思考强度切换、上下文和费用估算。
+  文件检查点恢复、斜杠命令、模型与思考强度切换、上下文和费用估算；顶部显示 AI 实时工作时长。
 - **对话视图**：简洁 / 详细模式一键切换；用户 / 全部切换按钮支持一键跳转到完整对话。
+- **会话内搜索与提问目录**：`Ctrl/Cmd + F` 在当前对话中搜索并高亮定位；右上角「提问目录」
+  可直接跳转到本会话的任意历史提问，无需切换视图。
 - **编辑与撤回**：用户消息可以原地编辑或撤回。编辑不弹窗，原消息会回到输入框；撤回需要确认。
-  两者都只回退当前对话，不新开标签或分支；旧记录保留在本机但从会话列表隐藏。
+  两者都只回退当前对话，不新开标签或改变对话名；旧记录作为隐藏备份保留在本机。
+- **检查点差异预览**：恢复文件前可逐个文件展开，预览回滚前后的具体代码差异。
 - **附件**：图片、PDF、文本/代码/配置/CSV/SVG 等；失败的附件会显示具体原因。
-- **扩展**：管理 MCP、插件市场、Hooks、Skills 和 Agents。
-- **文件**：工作区文件树、文本编辑和图片预览；工具里的文件路径可直接打开。
+- **扩展**：管理 MCP、插件市场、Hooks、Skills 和 Agents；MCP 支持查看工具列表、重连和登录提示。
+- **订阅 / 账号切换**：可预存多个供应商或同一供应商的多个 plan/token。设置 → API 默认显示
+  配置列表，点击「添加新配置」才展开表单；在模型下拉菜单中上方「API 配置 / 订阅」框切换账号、
+  下方「模型」框选择模型。切换后当前会话会用新账号重启并保留上下文。
+- **联网搜索**：内置 MCP 搜索工具，支持 DuckDuckGo、Bing、Baidu（均免密钥）、SearXNG、Tavily 和 Brave；
+  第三方 Anthropic 兼容接口也能使用。可在输入框下方与模型/强度/权限同级快速开关，也可在
+  **设置 → 常规** 配置和测试。
+- **运行中排队**：模型工作时仍可继续发送消息，消息会排队执行；可单独停止后台/子代理任务。
+- **工作区搜索**：`Ctrl/Cmd + Shift + F` 搜索文件内容，`Ctrl/Cmd + P` 搜索文件名；
+  `Ctrl/Cmd + K` 打开命令面板。
+- **文件与 Git 变更**：工作区文件树、文本编辑和图片预览；右侧面板可切到「Git 变更」，查看
+  未提交文件的状态与增删行数、点击查看 Git Diff，并可一键让 Claude 审查改动或生成提交信息。
+- **本机用量看板**：设置 → 用量 汇总今日与近 7 天的费用、Token、模型排行和项目排行，数据只保存在本机。
 - **后台会话**：启动、查看日志、停止和移除 `claude --bg` 会话。
 - **安全优先**：从界面删除会话前一定先备份；应用不会自动删除聊天。
-- **外观**：明/暗/跟随系统、强调色、字号、紧凑间距、托盘、关闭到托盘和全局快捷键。
+- **诊断与备份**：关于页可导出脱敏诊断日志、浏览和导出会话备份。
+- **会话复制/迁移**：可把会话复制成独立会话，或迁移到其他项目（原记录隐藏但保留）。
+- **外观**：明/暗/跟随系统；卡其暖色、黑白、蓝白、绿白四种配色。黑白/蓝白/绿白使用白色底，
+  只让按钮、选中态等控件着色；预设或自定义色盘的强调色；设置面板为不透明背景，关闭/保存固定在
+  顶部；字号、紧凑间距、托盘、关闭到托盘和全局快捷键。
+
+## 项目主页
+
+应用启动后先进入**项目目录**，而不是直接打开输入框：
+
+- 顶部搜索框可以按项目名或路径筛选项目。
+- 点击项目卡片进入项目页，列出该项目的全部会话；可以搜索会话、开始新对话、搜索项目文件。
+- 点击左侧品牌或文件夹卡片可以回到项目目录；打开的聊天仍保留在顶部标签栏。
+- 每个对话有独立的未发送草稿（文字和附件），切换标签不会共享或覆盖。
+- 会话菜单提供 **复制/迁移**：复制会创建独立会话；迁移会把新会话放到目标项目，并从列表隐藏原会话（原记录仍在本机）。
+- 顶部显示 AI 在本对话中的累计工作时长，运行期间实时更新。
 
 ## 系统要求
 
@@ -291,6 +322,34 @@ macOS 上也可以直接双击 `.app`，或把它拖进「应用程序」。应�
 - **Hooks**：编辑用户或项目 `settings.json` 里的 `hooks` 对象。
 - **Agents**：在 `~/.claude/agents/` 或项目 `.claude/agents/` 下创建、编辑和删除 Markdown 定义。
 
+## 联网搜索
+
+**设置 → 常规 → 联网搜索** 可以启用内置搜索工具。它通过应用自己的 MCP 服务器运行，因此不依赖
+推理服务是否实现 Anthropic 的服务端 `WebSearch`：
+
+- **DuckDuckGo**：默认选项，无需密钥；可能受频率限制，部分网络不可达。
+- **Bing**：无需密钥；DuckDuckGo 不可用时可直接切换。
+- **Baidu**：无需密钥；适合中文网络和中文结果。
+- **SearXNG**：填写实例地址，并确保实例允许 JSON 输出。
+- **Tavily / Brave Search**：填写对应 API Key。
+- **WebFetch**：仍然可用于抓取指定 URL；它由 Claude Code CLI 本地执行。
+
+第一次搜索时，权限卡片会请求确认；也可以把 `mcp__3pi-web-search__web_search` 加入
+**设置 → 权限** 的允许列表。使用官方 Anthropic API 时，原生 `WebSearch` 仍可用；第三方供应商下
+应用会改用内置搜索工具。
+
+## 手机 / 远程访问
+
+电脑端保持运行，手机浏览器即可使用完整界面：
+
+- **同一局域网**：**设置 → 远程访问** 启用并设置密码，手机打开 `http://<电脑 IP>:3789`。
+- **公网**：内置 Cloudflare Tunnel。Quick Tunnel 一键生成临时 `trycloudflare.com` 地址；
+  长期使用建议 Named Tunnel + Cloudflare Access。
+- **扫码直连**：远程访问面板生成二维码，手机扫码即可用 5 分钟有效的一次性配对码免密登录。
+- 会话、标签页、权限审批、中断和设置两端实时同步；后台标签需要审批或回答时会推送通知并震动提醒。
+- Cloudflare Tunnel 意外退出时会自动退避重连，无需回到电脑端手动重启。
+- 详细步骤和安全建议见 [docs/REMOTE.md](docs/REMOTE.md)。
+
 ## 后台会话
 
 **设置 → 后台** 可以在工作区启动后台会话。首次需要信任目录；勾选 **信任此目录** 或使用
@@ -320,6 +379,11 @@ macOS 上也可以直接双击 `.app`，或把它拖进「应用程序」。应�
 - PDF 支持取决于模型/网关。
 - 全局快捷键在 Wayland 下可能无效。
 - 英文由表现层翻译提供，少量动态/第三方字符串可能未翻译。
+- 停止按钮会中断当前回合；已经排队的消息仍会依次执行。要丢弃排队消息请关闭标签页；停止任务按钮只用于后台/子代理任务。
+- DuckDuckGo 搜索可能被限流或在部分网络不可达；可切换到 Bing / Baidu，或配置 SearXNG、Tavily、Brave。
+- MCP 登录依赖 `claude mcp login` 的浏览器回调；无浏览器环境需要手动打开 CLI 输出中的链接。
+- 编辑/撤回会保留一个隐藏的旧会话快照；界面上的标题和会话保持不变，但内部会使用新的会话 ID 继续。
+- 跨项目复制会重写会话记录里的 `cwd`；原会话不会被删除，迁移只是在列表中隐藏。
 - 安装包较大，因为包含 Claude Code 原生二进制。
 
 ## 安全与隐私
@@ -421,28 +485,71 @@ Settings → API:
 
 ## Highlights
 
+- **Project home**: the home screen is the project directory with project search. Opening a project
+  shows a composer at the top and the project's searchable chat history below; the sidebar and
+  top bar both have explicit home buttons.
 - **Workspaces and tabs**: chats belong to a workspace (a project folder). Each tab can run an
-  independent conversation.
+  independent conversation. Every chat keeps its own unsent draft (text and attachments).
 - **Inline approvals**: permission requests, clarifying questions, and plan approval appear as a
   compact card above the composer. They never cover the screen or block the rest of the app.
+- **Failover retry**: if the provider fails and you saved more than one API profile, the error
+  banner can switch profiles and resend the last turn in one click.
 - **Agent features**: streaming replies, thinking blocks, tool cards (Bash, edits, diffs,
   reads/searches, subagents, todos), file checkpoint restore, slash commands, model and effort
   selection, and context/cost estimates.
 - **Chat views**: one-click compact/detailed mode; a User/All toggle with jump-to-message.
+- **In-chat search and prompt timeline**: `Ctrl/Cmd + F` searches the current conversation with
+  highlighted matches; the prompt timeline jumps to any earlier question without leaving the chat.
 - **Edit and withdraw**: edit a sent user message in place (it returns to the composer without a
-  dialog), or withdraw it with confirmation. Both roll back the current tab without opening a new
-  tab/branch; the old transcript is kept but hidden.
+  dialog), or withdraw it with confirmation. Both keep the same visible chat title and do not open
+  a new branch; the old transcript is kept as a hidden backup.
+- **Checkpoint diff preview**: before restoring files, expand any affected file to preview the
+  exact code diff that will be applied.
 - **Attachments**: images, PDF, text/code/config/CSV/SVG, and more; rejected files explain why.
-- **Extensions**: manage MCP servers, install/update/remove plugins from the official marketplace,
-  manage hooks, and create or edit skills and agents.
-- **Files**: a workspace file tree with text editing and image preview; tool file paths open in
-  the same viewer.
+- **Extensions**: manage MCP servers (tool list, reconnect, sign-in state), install/update/remove
+  plugins from the official marketplace, manage hooks, and create or edit skills and agents.
+- **Subscriptions / accounts**: store multiple providers or multiple plans/tokens for the same
+  provider. Settings → API shows a clean list by default; the provider/token/model form only opens
+  after **Add configuration**. The model picker has two independent boxes: **API configuration /
+  subscriptions** on top and **Model** below. Switching restarts the current chat with the new
+  account while preserving its context.
+- **Web search**: a built-in MCP search tool with DuckDuckGo, Bing, and Baidu (no key), SearXNG,
+  Tavily, and Brave.
+  It works with third-party Anthropic-compatible providers. Toggle it next to the model, effort,
+  and permission controls, or configure and test it in **Settings → General**.
+- **Queued messages**: keep sending while the model is working; messages run in order. Background
+  and subagent tasks can be stopped individually.
+- **Workspace search**: `Ctrl/Cmd + Shift + F` searches file contents, `Ctrl/Cmd + P` searches file
+  names, and `Ctrl/Cmd + K` opens the command palette.
+- **Files and Git changes**: a workspace file tree with text editing and image preview; the side
+  panel also lists uncommitted Git changes with status and line counts, opens a Git diff per file,
+  and can ask Claude to review the changes or draft a commit message.
+- **Local usage analytics**: Settings → Usage summarises today and the last 7 days by cost, tokens,
+  model, and project. The history stays on this machine.
 - **Local background sessions**: start and monitor Claude Code background sessions without using a
   tab; stop, inspect logs, and remove them from the app.
+- **Diagnostics and backups**: export redacted diagnostics and browse or export session backups
+  from About.
 - **Safety first**: deleting a chat from the UI always keeps a local backup first. The app never
   automatically deletes chats.
-- **Customisation**: light/dark/system theme, accent colour, font size, compact spacing, tray,
+- **Chat copy/move**: copy a chat as an independent session, or move it to another project (the
+  original is hidden but retained).
+- **Customisation**: light/dark/system theme, warm khaki / monochrome / blue / green palettes.
+  Monochrome/blue/green keep white surfaces and tint controls only; preset or custom accent
+  colour; opaque Settings with a fixed top bar for close/save; font size, compact spacing, tray,
   close-to-tray, and a global shortcut.
+
+## Project home
+
+The app opens on the **project directory** instead of a blank composer:
+
+- Search projects by name or path.
+- Open a project to use a composer with model/effort/permission/web-search controls, list and
+  search all of its chats, or search project files.
+- Use the brand or folder card to return to the project directory; open chats stay in the tab bar.
+- Every chat keeps an independent unsent draft (text and attachments).
+- The chat menu offers **Copy/Move**: copy creates an independent chat; move places the new chat in another project and hides the original from the list (the original transcript stays on disk).
+- The top bar shows the AI's accumulated work time for the current chat and updates live while it works.
 
 ## Requirements
 
@@ -632,6 +739,39 @@ copy the desired `.jsonl` file back into the matching project folder under
 - **Agents**: create, edit, and delete Markdown agent definitions under `~/.claude/agents/` or the
   project `.claude/agents/`.
 
+## Web search
+
+**Settings → General → Web search** enables the built-in search tool. It runs in the app's own MCP
+server, so it does not depend on whether the inference provider implements Anthropic's server-side
+`WebSearch`:
+
+- **DuckDuckGo**: default, no API key required; may be rate limited or unreachable on some networks.
+- **Bing**: no API key required; use it when DuckDuckGo is blocked.
+- **Baidu**: no API key required; suited to Chinese networks and Chinese results.
+- **SearXNG**: enter an instance URL and make sure JSON output is enabled.
+- **Tavily / Brave Search**: enter the provider API key.
+- **WebFetch**: still available for fetching a specific URL; it runs locally in the Claude Code CLI.
+
+The first search asks for permission through the inline permission card. You can also add
+`mcp__3pi-web-search__web_search` to **Settings → Permissions**. With the official Anthropic API,
+native `WebSearch` remains available; with third-party providers the app uses the built-in search
+tool instead.
+
+## Phone / remote access
+
+Keep the desktop app running and use the full UI from a phone browser:
+
+- **Same LAN**: enable remote access in **Settings → Remote access**, set a password, then open
+  `http://<computer IP>:3789` on the phone.
+- **Internet**: built-in Cloudflare Tunnel. Quick Tunnel creates a temporary `trycloudflare.com`
+  address; for long-term use prefer a Named Tunnel with Cloudflare Access.
+- **QR pairing**: the remote panel renders a QR code. Scanning it logs the phone in with a
+  single-use pairing token valid for 5 minutes, so no password typing is needed.
+- Tabs, sessions, approvals, interrupts, and settings stay in sync across both clients. When a
+  background tab needs approval or an answer, the phone gets a notification and vibration alert.
+- If the Cloudflare Tunnel process exits unexpectedly, it reconnects automatically with backoff.
+- Full steps and security advice: [docs/REMOTE.md](docs/REMOTE.md).
+
 ## Background sessions
 
 **Settings → Background** starts a background session in a workspace. The first time, the
@@ -670,6 +810,16 @@ are usually unavailable with third-party providers.
 - The global shortcut may not work under Wayland.
 - English is provided by a presentation-layer translator; a few dynamic/third-party strings may
   remain untranslated.
+- Stop interrupts the current turn. Messages already queued still run in order; close the tab to
+  discard them. The per-task stop button only targets background/subagent tasks.
+- DuckDuckGo search can be rate limited or unreachable; switch to Bing or Baidu, or configure
+  SearXNG, Tavily, or Brave for a stable quota.
+- MCP sign-in relies on the browser callback from `claude mcp login`; on a headless machine, open
+  the URL printed by the CLI manually.
+- Edit/withdraw keeps a hidden snapshot of the old transcript; the visible title/chat stays the
+  same, but a new internal session ID continues the conversation.
+- Cross-project copy rewrites `cwd` fields in the transcript. The original is never deleted; a
+  move only hides it from the list.
 - The packaged app is large because it includes the Claude Code native binary.
 
 ## Security and privacy

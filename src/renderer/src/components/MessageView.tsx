@@ -1,4 +1,5 @@
 import {
+  Command,
   Copy,
   FileText,
   GitBranch,
@@ -8,8 +9,8 @@ import {
   Sparkles,
   Undo2
 } from 'lucide-react'
-import { useState } from 'react'
-import type { AssistantMessage, UIMessage, UserMessage } from '../types'
+import { memo, useState } from 'react'
+import type { AssistantMessage, NoticeMessage, UIMessage, UserMessage } from '../types'
 import { Markdown } from './Markdown'
 import { Starburst } from './Starburst'
 import { ToolCard } from './ToolCard'
@@ -215,21 +216,47 @@ function UserView({
   )
 }
 
-export function MessageView({
-  message,
-  actions,
-  compact = false
-}: {
+function HelpNotice({ message }: { message: NoticeMessage }) {
+  const commands = message.help || []
+
+  return (
+    <div className="notice notice-help">
+      <div className="notice-help-head">
+        <Command size={14} />
+        <span>{message.text}</span>
+        <span className="notice-help-count">{commands.length}</span>
+      </div>
+      <div className="notice-help-list">
+        {commands.map((command, index) => (
+          <div className="notice-help-item" key={`${command.name}-${index}`}>
+            <code>/{command.name}</code>
+            {command.argumentHint && <em>{command.argumentHint}</em>}
+            <span>{command.description}</span>
+          </div>
+        ))}
+      </div>
+      <div className="notice-help-note">
+        部分交互式命令（如打开终端面板或选择器）在无头环境中不可用。
+      </div>
+    </div>
+  )
+}
+
+interface MessageViewProps {
   message: UIMessage
+  revision?: number
   actions: MessageActions
   compact?: boolean
-}) {
+}
+
+function MessageViewImpl({ message, actions, compact = false }: MessageViewProps) {
   if (message.role === 'user') {
     return <UserView message={message} actions={actions} />
   }
 
   if (message.role === 'notice') {
-    if (compact && message.tone !== 'error') return null
+    if (message.help?.length) return <HelpNotice message={message} />
+    if (compact && message.tone === 'info') return null
     return (
       <div className={`notice notice-${message.tone}`}>
         <span>{message.text}</span>
@@ -239,3 +266,16 @@ export function MessageView({
 
   return <AssistantView message={message} actions={actions} compact={compact} />
 }
+
+/**
+ * Streaming mutates assistant messages in place, so reference equality is not
+ * enough. `revision` is bumped by the reducer; unchanged messages skip the
+ * expensive markdown/tool rendering while another message streams.
+ */
+export const MessageView = memo(
+  MessageViewImpl,
+  (previous, next) =>
+    previous.message === next.message &&
+    previous.revision === next.revision &&
+    previous.compact === next.compact
+)
