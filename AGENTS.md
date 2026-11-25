@@ -19,10 +19,14 @@ npx electron-vite build
 npm run package                 # host platform -> release/linux-unpacked or release/mac-<arch>/*.app
 npm run package:mac             # explicit macOS dir build (run on macOS)
 npm run dist:mac                # dmg + zip (unsigned)
+npm run package:win             # Windows dir build (Windows, or wine + electronDist override)
+npm run dist:win                # Windows NSIS installer (unsigned)
+npm run test:ci                 # tests without the POSIX build-bridge shell helper (Windows CI)
 npm run package:offline         # slim build + bundled Claude Code CLI (air-gapped)
 npm run dist:linux:offline      # offline Linux AppImage + deb
 npm run dist:mac:offline        # offline macOS dmg + zip
 node scripts/smoke-packaged.mjs # auto-detects Linux/macOS output; real API call; use with care
+node scripts/windows-smoke.mjs  # Windows CI: launch packaged exe + screenshot; no API call
 ```
 
 The project path contains spaces. Always quote it in shell commands.
@@ -33,8 +37,9 @@ The project path contains spaces. Always quote it in shell commands.
    `~/.claude/projects/**`. UI deletion must use the existing backup-then-delete flow in
    `src/main/index.ts` (`findSessionTranscript` + copy to the app data directory:
    `~/.config/claude-desk/session-backups/` on Linux,
-   `~/Library/Application Support/claude-desk/session-backups/` on macOS). Test only in temporary
-   workspaces, and never call delete on sessions you did not create.
+   `~/Library/Application Support/claude-desk/session-backups/` on macOS,
+   `%APPDATA%\claude-desk\session-backups\` on Windows). Test only in temporary workspaces, and
+   never call delete on sessions you did not create.
 2. **Agent prompts are inline, never full-screen.** Permission, question, and plan prompts live in
    `PermissionBar.tsx` / `QuestionBar.tsx` above the composer. Do not reintroduce modal backdrops
    for `canUseTool` flows.
@@ -43,13 +48,14 @@ The project path contains spaces. Always quote it in shell commands.
 4. **Keep the packaged native CLI path fix.** `resolveClaudeExecutable()` lives in
    `src/main/claude-cli.ts` and is re-exported by `src/main/session.ts`. It must point at
    `app.asar.unpacked`, and `electron-builder.yml` must keep
-   `asarUnpack: node_modules/@anthropic-ai/**`. This must work on Linux and macOS; without it
-   sessions fail with `spawn ENOTDIR` in both packaged builds. The default build excludes the
-   platform CLI package and resolves it at runtime; `electron-builder.offline.yml` bundles it.
+   `asarUnpack: node_modules/@anthropic-ai/**`. This must work on Linux, macOS and Windows;
+   without it sessions fail with `spawn ENOTDIR` in packaged builds. The default build excludes
+   the platform CLI package and resolves it at runtime; `electron-builder.offline.yml` bundles it.
+   On Windows the binary is `claude.exe`.
 5. **Do not rename the npm package `claude-desk`** without migrating the app data directory
-   (`~/.config/claude-desk/` on Linux, `~/Library/Application Support/claude-desk/` on macOS;
-   workspaces, preferences, API profiles, backups). Product/display name is 3PI Desk for Claude
-   Code; executable is `3pi-desk`.
+   (`~/.config/claude-desk/` on Linux, `~/Library/Application Support/claude-desk/` on macOS,
+   `%APPDATA%\claude-desk\` on Windows; workspaces, preferences, API profiles, backups).
+   Product/display name is 3PI Desk for Claude Code; executable is `3pi-desk`.
 6. **Plugin installs must use the cancellable runner.** `runPluginCommand` spawns with
    `stdio: ['ignore','pipe','pipe']` and `--json`. Using `execFile` with open stdin can hang
    forever on CLI confirmation prompts.
@@ -60,6 +66,11 @@ The project path contains spaces. Always quote it in shell commands.
    `net`, `dialog`, or other Electron-only APIs in modules the bridge imports. `claude-cli.ts`
    only uses `app.getPath/getVersion/getAppPath` and publishes status via
    `subscribeClaudeCliStatus` (wired to windows in `index.ts`). `npm test` builds the bridge.
+9. **Windows sessions require `claude.exe`.** Do not return npm's `claude.cmd` from
+   `resolveClaudeExecutable()`; the Agent SDK spawns the path directly and Node rejects `.cmd`
+   without a shell. Use the native installer or the in-app first-run download. Workspace paths
+   must be validated with the host platform's rules (`path.isAbsolute`, `path.join`), not
+   `startsWith('/')`.
 
 ## Current architecture in one minute
 
@@ -91,6 +102,8 @@ The project path contains spaces. Always quote it in shell commands.
 - `apps/macos/`: native SwiftUI macOS frontend (Apple Silicon; shares the Electron version;
   UI parity is still being completed).
   See `docs/MACOS-NATIVE.md`; UI parity is tracked in `docs/MACOS-UI-PARITY.md`.
+- `docs/WINDOWS.md`: native Windows Electron build (NSIS, Windows CI). It shares the renderer and
+  main process with Linux/macOS and runs the Windows Claude Code CLI; it does not require WSL.
 
 ## Important data flows
 
@@ -129,6 +142,11 @@ The project path contains spaces. Always quote it in shell commands.
 - macOS Electron verification in `ci.yml` is opt-in (`ENABLE_MACOS_CI=true`). It is skipped by
   default because macOS arm64 runners can cancel queued jobs, which marks CI red and sends
   failure notifications. Native macOS builds run in the `macos-native` job of `release.yml`.
+- Windows builds are unsigned NSIS packages, so SmartScreen warns on first run. They run the
+  Windows Claude Code CLI, which requires `claude.exe` (official installer or in-app download);
+  npm's `claude.cmd` shim is not supported. WSL workspaces are not yet first-class. Windows CI
+  builds the installer and runs a no-API smoke test; tray/notifications/dialogs and a real prompt
+  still need verification on a Windows desktop.
 
 ## Verification checklist
 
@@ -154,3 +172,6 @@ The project path contains spaces. Always quote it in shell commands.
 - Test workspace window: recent workspaces, session counts, open/add/remove.
 - Test delete: confirm backup appears in `~/.config/claude-desk/session-backups/`.
 - Check no stuck `claude plugin install` processes after marketplace operations.
+- Windows: `npm run test:ci`, `npm run dist:win`; install the NSIS package on Windows and test
+  tray/notifications/close-to-tray, CLI detection/download, file and Git panels, and one real
+  prompt in a temporary workspace. Confirm the CLI path ends with `claude.exe`.
