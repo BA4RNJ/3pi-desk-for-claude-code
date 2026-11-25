@@ -17,14 +17,23 @@ test('encodes project directories the same way as Claude Code', () => {
   )
 })
 
+test('truncates and hashes long project directories like Claude Code', () => {
+  const long = `/tmp/${'x'.repeat(300)}`
+  assert.equal(encodeProjectDir(long), `${'-tmp-' + 'x'.repeat(195)}-uqvuhz`)
+})
+
 test('copies a transcript across workspaces and rewrites cwd', async () => {
   const root = await fs.mkdtemp(join(tmpdir(), '3pi-session-copy-'))
   const previous = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = root
-  const sourceCwd = join(root, 'source')
-  const targetCwd = join(root, 'target')
-  await fs.mkdir(sourceCwd, { recursive: true })
-  await fs.mkdir(targetCwd, { recursive: true })
+  const sourcePath = join(root, 'source')
+  const targetPath = join(root, 'target')
+  await fs.mkdir(sourcePath, { recursive: true })
+  await fs.mkdir(targetPath, { recursive: true })
+  // The SDK resolves short/aliased paths (Windows 8.3 names) before keying the
+  // project directory, so the fixture must use the real path too.
+  const sourceCwd = await fs.realpath(sourcePath)
+  const targetCwd = await fs.realpath(targetPath)
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   const sourceDir = join(root, 'projects', encodeProjectDir(sourceCwd))
   await fs.mkdir(sourceDir, { recursive: true })
@@ -99,10 +108,12 @@ test('relocates a renamed project without touching the originals', async () => {
   const root = await fs.mkdtemp(join(tmpdir(), '3pi-relocate-'))
   const previous = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = root
-  const oldCwd = join(root, 'old-project')
-  const newCwd = join(root, 'new-project')
-  await fs.mkdir(oldCwd, { recursive: true })
-  await fs.mkdir(newCwd, { recursive: true })
+  const oldPath = join(root, 'old-project')
+  const newPath = join(root, 'new-project')
+  await fs.mkdir(oldPath, { recursive: true })
+  await fs.mkdir(newPath, { recursive: true })
+  const oldCwd = await fs.realpath(oldPath)
+  const newCwd = await fs.realpath(newPath)
   const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const sourceDir = join(root, 'projects', encodeProjectDir(oldCwd))
   const targetDir = join(root, 'projects', encodeProjectDir(newCwd))

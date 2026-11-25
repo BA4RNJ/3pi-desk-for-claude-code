@@ -7,13 +7,41 @@ function projectsRoot(): string {
   return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
 }
 
+/** The CLI truncates long project names to this many characters. */
+const MAX_PROJECT_DIR_LENGTH = 200
+
+/** Same 32-bit string hash the CLI appends when a project name is too long. */
+function projectNameHash(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0
+  }
+  return hash
+}
+
 /**
  * Claude Code stores transcripts under a path where every non-alphanumeric
- * character is replaced by '-'. Keep this in sync with the CLI; a mismatch
+ * character is replaced by '-'. Names longer than 200 characters are truncated
+ * and suffixed with a base36 hash. Keep this in sync with the CLI; a mismatch
  * would make the copied session invisible to `listSessions()`.
  */
 export function encodeProjectDir(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  const normalized = process.platform === 'darwin' ? cwd.normalize('NFC') : cwd
+  const encoded = normalized.replace(/[^a-zA-Z0-9]/g, '-')
+  if (encoded.length <= MAX_PROJECT_DIR_LENGTH) return encoded
+  return `${encoded.slice(0, MAX_PROJECT_DIR_LENGTH)}-${Math.abs(projectNameHash(normalized)).toString(36)}`
+}
+
+/**
+ * Project directories are keyed by the real path when it is available; the
+ * CLI resolves short/aliased paths (notably Windows 8.3 names) before encoding.
+ */
+async function projectDirKey(cwd: string): Promise<string> {
+  try {
+    return encodeProjectDir(await fs.realpath(cwd))
+  } catch {
+    return encodeProjectDir(cwd)
+  }
 }
 
 function rewriteCwd(value: unknown, cwd: string): unknown {
@@ -65,7 +93,11 @@ export async function copySessionToWorkspace(
     throw new Error('Source and target workspace are required.')
   }
   const forked = await forkSession(sessionId, { dir: sourceCwd })
-  if (encodeProjectDir(sourceCwd) === encodeProjectDir(targetCwd)) {
+  const [sourceKey, targetKey] = await Promise.all([
+    projectDirKey(sourceCwd),
+    projectDirKey(targetCwd)
+  ])
+  if (sourceKey === targetKey) {
     return forked.sessionId
   }
 
@@ -74,7 +106,7 @@ export async function copySessionToWorkspace(
     throw new Error('The forked transcript could not be found.')
   }
 
-  const targetDir = join(projectsRoot(), encodeProjectDir(targetCwd))
+  const targetDir = join(projectsRoot(), targetKey)
   await fs.mkdir(targetDir, { recursive: true })
   const targetFile = join(targetDir, `${forked.sessionId}.jsonl`)
   let moved = false
@@ -202,8 +234,12 @@ export async function relocateProjectTranscripts(
 ): Promise<ProjectRelocation> {
   const result: ProjectRelocation = { sessions: 0, files: 0, skipped: 0 }
   if (!oldCwd.trim() || !newCwd.trim()) return result
-  const sourceDir = join(projectsRoot(), encodeProjectDir(oldCwd))
-  const targetDir = join(projectsRoot(), encodeProjectDir(newCwd))
+  const [sourceKey, targetKey] = await Promise.all([
+    projectDirKey(oldCwd),
+    projectDirKey(newCwd)
+  ])
+  const sourceDir = join(projectsRoot(), sourceKey)
+  const targetDir = join(projectsRoot(), targetKey)
   if (sourceDir === targetDir) return result
   await fs.mkdir(targetDir, { recursive: true })
   await relocateDir(sourceDir, targetDir, newCwd, '', result)
