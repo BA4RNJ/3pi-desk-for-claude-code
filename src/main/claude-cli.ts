@@ -396,7 +396,7 @@ async function performDownload(): Promise<ClaudeCliStatus> {
     if (!existsSync(extracted)) {
       throw new Error('下载的 CLI 包中没有找到 claude 可执行文件。')
     }
-    chmodSync(extracted, 0o755)
+    if (process.platform !== 'win32') chmodSync(extracted, 0o755)
     mkdirSync(dirname(destination), { recursive: true })
     await fs.rm(destination, { force: true })
     await fs.rename(extracted, destination)

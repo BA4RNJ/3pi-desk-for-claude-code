@@ -1,5 +1,5 @@
 import { accessSync, constants, readdirSync, statSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { posix, win32 } from 'node:path'
 
 /**
  * Pure filesystem/path helpers for locating the Claude Code CLI.
@@ -10,6 +10,15 @@ import { delimiter, join } from 'node:path'
 
 /** Oldest CLI the current Agent SDK is expected to speak to. */
 export const MINIMUM_CLI_VERSION = '2.0.0'
+
+/** Use the target platform's path rules, even when tests simulate another OS. */
+function pathApi(platform: NodeJS.Platform) {
+  return platform === 'win32' ? win32 : posix
+}
+
+function pathDelimiter(platform: NodeJS.Platform): string {
+  return platform === 'win32' ? ';' : ':'
+}
 
 export function claudeBinaryName(
   platform: NodeJS.Platform = process.platform
@@ -61,13 +70,17 @@ export function platformPackageNames(
 }
 
 /** Versions installed by the official installer at ~/.local/share/claude. */
-export function versionManagerCandidates(home: string): string[] {
-  const dir = join(home, '.local', 'share', 'claude', 'versions')
+export function versionManagerCandidates(
+  home: string,
+  platform: NodeJS.Platform = process.platform
+): string[] {
+  const p = pathApi(platform)
+  const dir = p.join(home, '.local', 'share', 'claude', 'versions')
   try {
     return readdirSync(dir)
       .filter((name) => /^\d+\.\d+\.\d+/.test(name))
       .sort((a, b) => compareVersions(b, a))
-      .map((name) => join(dir, name))
+      .map((name) => p.join(dir, name))
   } catch {
     return []
   }
@@ -85,28 +98,29 @@ export interface SystemCandidateOptions {
  */
 export function systemBinaryCandidates(options: SystemCandidateOptions): string[] {
   const platform = options.platform ?? process.platform
+  const p = pathApi(platform)
   const binary = claudeBinaryName(platform)
   const candidates: string[] = []
 
-  for (const dir of (options.envPath ?? '').split(delimiter)) {
-    if (dir) candidates.push(join(dir, binary))
+  for (const dir of (options.envPath ?? '').split(pathDelimiter(platform))) {
+    if (dir) candidates.push(p.join(dir, binary))
   }
 
   if (platform === 'darwin') {
-    candidates.push(join(options.home, '.local', 'bin', binary))
-    candidates.push(join(options.home, '.claude', 'local', binary))
+    candidates.push(p.join(options.home, '.local', 'bin', binary))
+    candidates.push(p.join(options.home, '.claude', 'local', binary))
     candidates.push('/opt/homebrew/bin/claude')
     candidates.push('/usr/local/bin/claude')
   } else if (platform === 'win32') {
-    candidates.push(join(options.home, '.local', 'bin', binary))
+    candidates.push(p.join(options.home, '.local', 'bin', binary))
   } else {
-    candidates.push(join(options.home, '.local', 'bin', binary))
-    candidates.push(join(options.home, '.claude', 'local', binary))
+    candidates.push(p.join(options.home, '.local', 'bin', binary))
+    candidates.push(p.join(options.home, '.claude', 'local', binary))
     candidates.push('/usr/local/bin/claude')
     candidates.push('/usr/bin/claude')
   }
 
-  candidates.push(...versionManagerCandidates(options.home))
+  candidates.push(...versionManagerCandidates(options.home, platform))
   return [...new Set(candidates)]
 }
 
@@ -115,5 +129,5 @@ export function cachedCliPath(
   version: string,
   platform: NodeJS.Platform = process.platform
 ): string {
-  return join(userData, 'claude-cli', version, claudeBinaryName(platform))
+  return pathApi(platform).join(userData, 'claude-cli', version, claudeBinaryName(platform))
 }

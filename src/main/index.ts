@@ -141,6 +141,12 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('disable-gpu-sandbox')
 }
 
+if (process.platform === 'win32') {
+  // Toast notifications and taskbar grouping use the same AppUserModelID as
+  // the NSIS shortcut. Keep it in sync with electron-builder's appId.
+  app.setAppUserModelId('local.3pidesk')
+}
+
 /**
  * WSL, with or without WSLg, has no Windows system tray and cannot receive
  * Windows-wide global shortcuts. Detect it once at startup so those features

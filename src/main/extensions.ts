@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   AgentEntry,
@@ -472,10 +472,13 @@ function extensionRoots(cwd: string): string[] {
 }
 
 function assertExtensionPath(path: string, cwd: string): void {
-  const target = path.startsWith('/') ? path : join(cwd, path)
-  const allowed = extensionRoots(cwd).some((root) => target.startsWith(`${root}/`))
+  const target = isAbsolute(path) ? path : join(cwd, path)
+  const allowed = extensionRoots(cwd).some((root) => {
+    const rel = relative(root, target)
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  })
   if (!allowed) throw new Error('You can only edit files under skills or agents directories.')
-  if (!target.endsWith('.md')) throw new Error('Only Markdown files are supported.')
+  if (!target.toLowerCase().endsWith('.md')) throw new Error('Only Markdown files are supported.')
 }
 
 export async function readExtensionFile(

@@ -105,3 +105,50 @@ jobs:
         run: npx electron-builder --mac dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+  verify-windows:
+    name: Verify (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:ci
+
+      - name: Build
+        run: npx electron-vite build
+
+      - name: Package (unsigned)
+        run: npx electron-builder --win nsis --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Smoke test packaged app
+        run: node scripts/windows-smoke.mjs
+
+      - name: Upload Windows artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3pi-desk-windows
+          path: |
+            release/*.exe
+            release/windows-smoke.png
+          if-no-files-found: warn

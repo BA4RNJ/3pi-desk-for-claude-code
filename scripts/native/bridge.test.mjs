@@ -2,7 +2,17 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
 import { once } from 'node:events'
-import { serve } from '../../packages/agent-bridge/protocol.mjs'
+import { isAbsoluteWorkspacePath, serve } from '../../packages/agent-bridge/protocol.mjs'
+
+test('accepts POSIX, Windows drive and UNC workspace paths', () => {
+  assert.equal(isAbsoluteWorkspacePath('/tmp/project', 'linux'), true)
+  assert.equal(isAbsoluteWorkspacePath('C:\\work\\project', 'win32'), true)
+  assert.equal(isAbsoluteWorkspacePath('\\\\server\\share\\project', 'win32'), true)
+  assert.equal(isAbsoluteWorkspacePath('C:relative', 'win32'), false)
+  assert.equal(isAbsoluteWorkspacePath('work\\project', 'win32'), false)
+  assert.equal(isAbsoluteWorkspacePath('', 'win32'), false)
+  assert.equal(isAbsoluteWorkspacePath('C:\\work', 'linux'), false)
+})
 
 test('protocol serializes each tab, routes events, rejects invalid requests and stops on EOF', async () => {
   const input = new PassThrough(), output = new PassThrough()

@@ -21,8 +21,10 @@ test('copies a transcript across workspaces and rewrites cwd', async () => {
   const root = await fs.mkdtemp(join(tmpdir(), '3pi-session-copy-'))
   const previous = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = root
-  const sourceCwd = '/tmp/3pi-copy-source'
-  const targetCwd = '/tmp/3pi-copy-target'
+  const sourceCwd = join(root, 'source')
+  const targetCwd = join(root, 'target')
+  await fs.mkdir(sourceCwd, { recursive: true })
+  await fs.mkdir(targetCwd, { recursive: true })
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   const sourceDir = join(root, 'projects', encodeProjectDir(sourceCwd))
   await fs.mkdir(sourceDir, { recursive: true })
@@ -76,7 +78,10 @@ test('copies a transcript across workspaces and rewrites cwd', async () => {
       `${newId}.jsonl`
     )
     const text = await fs.readFile(targetFile, 'utf8')
-    assert.match(text, /"cwd":"\/tmp\/3pi-copy-target"/)
+    const copied = text.trim().split('\n').map((line) => JSON.parse(line))
+    const withCwd = copied.filter((entry) => typeof entry.cwd === 'string')
+    assert.ok(withCwd.length >= 2)
+    assert.ok(withCwd.every((entry) => entry.cwd === targetCwd))
     assert.ok(await fs.access(join(sourceDir, `${id}.jsonl`)).then(() => true, () => false))
     assert.ok(
       !(await fs
@@ -94,8 +99,10 @@ test('relocates a renamed project without touching the originals', async () => {
   const root = await fs.mkdtemp(join(tmpdir(), '3pi-relocate-'))
   const previous = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = root
-  const oldCwd = '/tmp/3pi-old-project'
-  const newCwd = '/tmp/3pi-new-project'
+  const oldCwd = join(root, 'old-project')
+  const newCwd = join(root, 'new-project')
+  await fs.mkdir(oldCwd, { recursive: true })
+  await fs.mkdir(newCwd, { recursive: true })
   const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const sourceDir = join(root, 'projects', encodeProjectDir(oldCwd))
   const targetDir = join(root, 'projects', encodeProjectDir(newCwd))
@@ -120,12 +127,12 @@ test('relocates a renamed project without touching the originals', async () => {
     assert.deepEqual(result, { sessions: 1, files: 2, skipped: 0 })
 
     const copied = await fs.readFile(join(targetDir, `${id}.jsonl`), 'utf8')
-    assert.match(copied, /"cwd":"\/tmp\/3pi-new-project"/)
+    assert.equal(JSON.parse(copied.trim()).cwd, newCwd)
     const subagent = await fs.readFile(
       join(targetDir, id, 'subagents', 'agent.jsonl'),
       'utf8'
     )
-    assert.match(subagent, /"cwd":"\/tmp\/3pi-new-project"/)
+    assert.equal(JSON.parse(subagent.trim()).cwd, newCwd)
     assert.equal(
       await fs.readFile(join(targetDir, 'memory', 'notes.md'), 'utf8'),
       'old project memory\n'
@@ -133,7 +140,7 @@ test('relocates a renamed project without touching the originals', async () => {
 
     // The original transcript stays under the old project directory.
     const original = await fs.readFile(join(sourceDir, `${id}.jsonl`), 'utf8')
-    assert.match(original, /"cwd":"\/tmp\/3pi-old-project"/)
+    assert.equal(JSON.parse(original.trim()).cwd, oldCwd)
 
     // Running it again never overwrites files already in the new project.
     const again = await relocateProjectTranscripts(oldCwd, newCwd)

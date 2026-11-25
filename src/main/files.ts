@@ -1,7 +1,7 @@
 import { dialog } from 'electron'
 import { realpathSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type {
   Attachment,
   AttachmentFailure,
@@ -65,13 +65,13 @@ export async function searchFiles(cwd: string, query: string): Promise<FileEntry
       }
       if (entry.isDirectory()) {
         if (IGNORED_DIRS.has(entry.name)) continue
-        await walk(`${directory}/${entry.name}`, depth + 1)
+        await walk(join(directory, entry.name), depth + 1)
         continue
       }
       if (!entry.isFile()) continue
       visited += 1
 
-      const absolute = `${directory}/${entry.name}`
+      const absolute = join(directory, entry.name)
       const relativePath = relative(cwd, absolute).split('\\').join('/')
       if (needle && !relativePath.toLowerCase().includes(needle)) continue
 
@@ -274,7 +274,7 @@ export async function fileTree(cwd: string): Promise<FileNode[]> {
       if (budget <= 0) break
       if (entry.name.startsWith('.') && entry.name !== '.claude') continue
       if (IGNORED_DIRS.has(entry.name)) continue
-      const absolute = `${directory}/${entry.name}`
+      const absolute = join(directory, entry.name)
       if (!isInside(cwd, absolute)) continue
       budget -= 1
       if (entry.isDirectory()) {
@@ -301,7 +301,7 @@ export async function fileTree(cwd: string): Promise<FileNode[]> {
 }
 
 export async function readFileContent(cwd: string, path: string): Promise<FileContent> {
-  const target = path.startsWith('/') ? path : `${cwd}/${path}`
+  const target = isAbsolute(path) ? path : join(cwd, path)
   if (!isInside(cwd, target)) throw new Error('You can only open files inside the current workspace.')
   const stat = await fs.stat(target)
   if (!stat.isFile()) throw new Error('Not a file.')
@@ -343,7 +343,7 @@ export async function writeFileContent(
   path: string,
   text: string
 ): Promise<void> {
-  const target = path.startsWith('/') ? path : `${cwd}/${path}`
+  const target = isAbsolute(path) ? path : join(cwd, path)
   if (!isInside(cwd, target)) throw new Error('You can only modify files inside the current workspace.')
   await fs.writeFile(target, text, 'utf8')
 }

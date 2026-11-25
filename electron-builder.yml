@@ -72,3 +72,16 @@ mac:
   extendInfo:
     CFBundleDisplayName: 3PI Desk for Claude Code
     NSHumanReadableCopyright: Copyright © 2026 BA4RNJ
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+  executableName: 3pi-desk
+  artifactName: 3pi-desk-${version}-windows-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 3PI Desk

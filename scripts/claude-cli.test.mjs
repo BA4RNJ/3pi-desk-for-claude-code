@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { basename, join, posix, win32 } from 'node:path'
 import {
   cachedCliPath,
   claudeBinaryName,
@@ -45,13 +45,27 @@ test('uses platform-specific package and binary names', () => {
 test('puts PATH entries first and deduplicates candidates', () => {
   const candidates = systemBinaryCandidates({
     platform: 'linux',
-    envPath: ['/opt/bin', '/usr/bin', '/opt/bin'].join(delimiter),
+    envPath: ['/opt/bin', '/usr/bin', '/opt/bin'].join(':'),
     home: '/home/tester'
   })
-  assert.equal(candidates[0], join('/opt/bin', 'claude'))
-  assert.equal(candidates[1], join('/usr/bin', 'claude'))
-  assert.ok(candidates.includes(join('/home/tester', '.local', 'bin', 'claude')))
+  assert.equal(candidates[0], posix.join('/opt/bin', 'claude'))
+  assert.equal(candidates[1], posix.join('/usr/bin', 'claude'))
+  assert.ok(candidates.includes(posix.join('/home/tester', '.local', 'bin', 'claude')))
   assert.equal(new Set(candidates).size, candidates.length)
+})
+
+test('uses Windows path rules for the native installer and PATH', () => {
+  const candidates = systemBinaryCandidates({
+    platform: 'win32',
+    envPath: ['C:\\Tools', 'C:\\Windows'].join(';'),
+    home: 'C:\\Users\\tester'
+  })
+  assert.equal(candidates[0], win32.join('C:\\Tools', 'claude.exe'))
+  assert.equal(candidates[1], win32.join('C:\\Windows', 'claude.exe'))
+  assert.ok(
+    candidates.includes(win32.join('C:\\Users\\tester', '.local', 'bin', 'claude.exe'))
+  )
+  assert.ok(candidates.every((candidate) => !candidate.toLowerCase().includes('claude.cmd')))
 })
 
 test('lists official-installer versions newest first', () => {
@@ -63,7 +77,7 @@ test('lists official-installer versions newest first', () => {
     }
     const found = versionManagerCandidates(home)
     assert.deepEqual(
-      found.map((path) => path.split('/').pop()),
+      found.map((path) => basename(path)),
       ['2.1.309', '2.0.9', '1.0.0']
     )
   } finally {
@@ -76,7 +90,7 @@ test('detects executable files and builds the cache path', () => {
   try {
     const file = join(dir, 'claude')
     writeFileSync(file, '#!/bin/sh\n')
-    chmodSync(file, 0o755)
+    if (process.platform !== 'win32') chmodSync(file, 0o755)
     assert.equal(isExecutableFile(file), true)
 
     const plain = join(dir, 'plain')
@@ -88,7 +102,20 @@ test('detects executable files and builds the cache path', () => {
 
     assert.equal(
       cachedCliPath('/home/tester/.config/claude-desk', '0.3.316', 'linux'),
-      join('/home/tester/.config/claude-desk', 'claude-cli', '0.3.316', 'claude')
+      posix.join('/home/tester/.config/claude-desk', 'claude-cli', '0.3.316', 'claude')
+    )
+    assert.equal(
+      cachedCliPath(
+        'C:\\Users\\tester\\AppData\\Roaming\\claude-desk',
+        '0.3.316',
+        'win32'
+      ),
+      win32.join(
+        'C:\\Users\\tester\\AppData\\Roaming\\claude-desk',
+        'claude-cli',
+        '0.3.316',
+        'claude.exe'
+      )
     )
   } finally {
     rmSync(dir, { recursive: true, force: true })

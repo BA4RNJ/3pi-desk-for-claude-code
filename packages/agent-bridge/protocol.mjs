@@ -1,4 +1,12 @@
 import { createInterface } from 'node:readline'
+import { posix, win32 } from 'node:path'
+
+// Workspace paths come from the host UI. Use the target platform's rules so
+// Windows drive and UNC paths are accepted as well as POSIX paths.
+export function isAbsoluteWorkspacePath(value, platform = process.platform) {
+  if (typeof value !== 'string' || value.length === 0) return false
+  return (platform === 'win32' ? win32 : posix).isAbsolute(value)
+}
 
 // One JSON object per line. stdout is reserved exclusively for protocol traffic.
 export function serve({ input, output, createSession, service, onShutdown = () => {} }) {
@@ -16,7 +24,7 @@ export function serve({ input, output, createSession, service, onShutdown = () =
     const tabId = requireTab(request)
     if (request.method === 'start') {
       if (sessions.has(tabId)) throw new Error('Tab already started')
-      if (typeof request.params?.cwd !== 'string' || !request.params.cwd.startsWith('/')) throw new Error('An absolute workspace path is required')
+      if (!isAbsoluteWorkspacePath(request.params?.cwd)) throw new Error('An absolute workspace path is required')
       const callbacks = {
         emitEvent: (data) => emit({ event: 'message', tabId, data }),
         emitState: (data) => emit({ event: 'state', tabId, data }),

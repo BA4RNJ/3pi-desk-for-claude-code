@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { relative } from 'node:path'
+import { join, relative } from 'node:path'
 import type { ContentSearchMatch } from '../shared/types'
 
 const IGNORED_DIRS = new Set([
@@ -82,7 +82,7 @@ export async function searchContent(
     for (const entry of entries) {
       if (visited >= MAX_FILES || matches.length >= limit) return
       if (entry.isSymbolicLink()) continue
-      const absolute = `${directory}/${entry.name}`
+      const absolute = join(directory, entry.name)
       if (entry.isDirectory()) {
         if (entry.name.startsWith('.') && entry.name !== '.claude') continue
         if (IGNORED_DIRS.has(entry.name)) continue
