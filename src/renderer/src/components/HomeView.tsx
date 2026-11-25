@@ -556,7 +556,7 @@ export function HomeView({
         <div>
           <h1>项目</h1>
           <p>
-            像管理文件夹一样多层收纳项目（共 {workspaces.length} 个项目路径已完整保留）。可拖拽项目到文件夹或逐级点开。
+            {`像管理文件夹一样多层收纳项目（共 ${workspaces.length} 个项目路径已完整保留）。可拖拽项目到文件夹或逐级点开。`}
           </p>
         </div>
         <div className="project-home-actions">
